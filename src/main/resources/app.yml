@@ -146,6 +146,18 @@ telegram:
     - APP_START
     - APP_STOP
 
+# ========= RECOVERY / REHYDRATE =========
+# Khi bật + state.json trống (user xoá ./data) + ví có coin → bot tạo Position
+# với entryPrice = giá hiện tại lúc start ("coi như mua lại"). TP/SL/trailing sẽ
+# manage forward từ mốc đó. Bot KHÔNG biết entry thật trước đó.
+#
+# RỦI RO: coin user đang hodl dài hạn sẽ bị bot manage → có thể bán ở partial TP.
+# Default false để đảm bảo an toàn - user phải chủ động bật.
+recovery:
+  rehydrateOnStart: false              # true = rehydrate khi detect orphan
+  minAssetValueUsdt: 1.0               # Coin < 1 USDT giá trị: skip (dust)
+  onlyWhenStateEmpty: true             # Chỉ chạy khi state.positions rỗng
+
 # ========= DYNAMIC CONFIG =========
 dynamic:
   hotReload: true                       # true = sửa file YAML bot tự reload

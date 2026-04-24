@@ -32,6 +32,7 @@ import vn.tamtd.bot.storage.StateStore;
 import vn.tamtd.bot.strategy.AccountCache;
 import vn.tamtd.bot.strategy.CapitalInitializer;
 import vn.tamtd.bot.strategy.EntryPlanner;
+import vn.tamtd.bot.strategy.RehydrateService;
 import vn.tamtd.bot.strategy.FundingRateGuard;
 import vn.tamtd.bot.strategy.LiquidationGuard;
 import vn.tamtd.bot.strategy.PositionManager;
@@ -118,6 +119,17 @@ public final class RunCommand implements Callable<Integer> {
 
         CapitalInitializer capitalInitializer = new CapitalInitializer(registry, exchangeClient);
         AccountCache accountCache = new AccountCache(capitalInitializer);
+
+        // Rehydrate (opt-in): nếu state trống mà ví có coin → tạo Position với
+        // entryPrice = giá hiện tại. Phải chạy TRƯỚC khi start TickLoop để
+        // tick đầu tiên đã thấy positions đầy đủ.
+        RehydrateService rehydrateService = new RehydrateService(
+                registry, exchangeClient, filterCache, capitalInitializer, stateStore, notifier);
+        int rehydrated = rehydrateService.rehydrateIfNeeded(state);
+        if (rehydrated > 0) {
+            log.warn("Rehydrated {} position từ ví - bot sẽ manage như mới mua", rehydrated);
+        }
+
         PositionManager positionManager = new PositionManager(registry, trendIndicators, filterCache);
         EntryPlanner entryPlanner = new EntryPlanner(registry, trendIndicators, barSeriesCache, fundingGuard, accountCache);
         RebalanceManager rebalanceManager = new RebalanceManager(registry, trendIndicators, barSeriesCache);

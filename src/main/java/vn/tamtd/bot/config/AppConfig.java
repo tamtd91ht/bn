@@ -33,6 +33,8 @@ public record AppConfig(
         Storage storage,
         Logging logging,
         Telegram telegram,
+        /** Recovery/rehydrate settings - khôi phục position từ ví khi state file trống. Optional. */
+        Recovery recovery,
         /** Per-symbol override. Key = symbol (VD "DOGEUSDT"). */
         Map<String, SymbolOverride> symbols,
         /** Secrets không có trong YAML - đọc từ env var + secrets.properties. */
@@ -42,6 +44,7 @@ public record AppConfig(
     public AppConfig {
         // Defensive: chuẩn hoá các null collection về empty để tránh NPE downstream
         if (symbols == null) symbols = Map.of();
+        if (recovery == null) recovery = Recovery.defaults();
     }
 
     /** Shortcut tiện dùng ở strategy/order code. */
@@ -262,6 +265,34 @@ public record AppConfig(
             if (alertEvents == null) alertEvents = List.of();
             else alertEvents = Collections.unmodifiableList(alertEvents);
         }
+    }
+
+    /**
+     * Rehydrate khi start: nếu bật + state file trống/thiếu position, bot scan holdings
+     * từ ví Binance và tạo Position với {@code entryPrice = currentPrice} - coi như
+     * coin vừa mua tại thời điểm start. TP/SL/trailing sẽ manage forward từ mốc đó.
+     * PnL lịch sử KHÔNG được khôi phục (bot không biết giá entry thật).
+     */
+    public record Recovery(
+            /** Cho phép rehydrate. Default false - user phải opt-in để tránh bot tự take over
+             *  coin mà user đang hodl dài hạn. */
+            Boolean rehydrateOnStart,
+            /** Coin có USDT value < ngưỡng này → skip (tránh rehydrate dust). */
+            Double minAssetValueUsdt,
+            /** Chỉ rehydrate nếu state.positions rỗng. False = allow merge (advanced). */
+            Boolean onlyWhenStateEmpty
+    ) {
+        public static Recovery defaults() {
+            return new Recovery(false, 1.0, true);
+        }
+        public Recovery {
+            if (rehydrateOnStart == null) rehydrateOnStart = false;
+            if (minAssetValueUsdt == null) minAssetValueUsdt = 1.0;
+            if (onlyWhenStateEmpty == null) onlyWhenStateEmpty = true;
+        }
+        public boolean rehydrateOnStartV() { return rehydrateOnStart; }
+        public double minAssetValueUsdtV() { return minAssetValueUsdt; }
+        public boolean onlyWhenStateEmptyV() { return onlyWhenStateEmpty; }
     }
 
     /** Override config cho 1 symbol cụ thể. Tất cả field tuỳ chọn (null = không override). */
