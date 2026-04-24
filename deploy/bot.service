@@ -1,0 +1,20 @@
+[Unit]
+Description=Binance Auto-Trading Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bot
+WorkingDirectory=/opt/bot
+EnvironmentFile=/opt/bot/.env
+ExecStart=/usr/bin/java -Xmx512m -jar /opt/bot/bot.jar run --config /opt/bot/application.yml
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+# Giới hạn memory để an toàn khi process rò rỉ
+MemoryMax=768M
+
+[Install]
+WantedBy=multi-user.target

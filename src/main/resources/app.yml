@@ -1,0 +1,166 @@
+# ============================================================
+# Binance Auto-Trading Bot — cấu hình chính (app.yml)
+#
+# File này được load theo thứ tự:
+#   1. <thư mục chứa bot.jar>/app.yml   ← ưu tiên (edit để đổi runtime)
+#   2. classpath:/app.yml               ← fallback khi chạy từ IDE / chưa tạo file ngoài
+#
+# Per-symbol override đặt trong `symbols.yml` cạnh jar (xem ví dụ cuối file).
+#
+# Secrets (API keys) KHÔNG bỏ vào đây. Set qua env var:
+#   BINANCE_API_KEY, BINANCE_API_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+#
+# Hot-reload: sửa file → lưu → bot tự nhận sau vài giây (xem dynamic.hotReload).
+# ============================================================
+
+# ========= EXCHANGE =========
+exchange:
+  # SPOT       = giao ngay (không đòn bẩy, long-only).
+  # USDM_FUTURES = USDⓈ-M futures (có đòn bẩy, có thể long/short tuỳ chiến lược).
+  mode: SPOT
+  # true = dùng testnet (testnet.binance.vision / testnet.binancefuture.com). Key testnet khác key live.
+  useTestnet: false
+  # Binance reject request nếu timestamp lệch quá recvWindow. 5000ms đủ với VPS đã sync NTP.
+  recvWindow: 5000
+  # Đòn bẩy. SPOT luôn = 1. Futures: 1-125 (khuyến nghị ≤ 5 cho bot cá nhân).
+  leverage: 1
+  # Chỉ áp dụng khi mode=USDM_FUTURES.
+  # ISOLATED = mỗi vị thế có margin riêng (an toàn, khuyến nghị).
+  # CROSSED  = dùng chung toàn bộ số dư → thua 1 vị thế có thể kéo các vị thế khác.
+  marginType: ISOLATED
+  # ONE_WAY = mỗi symbol 1 chiều (khuyến nghị).
+  # HEDGE   = cho phép long+short cùng symbol. Chưa hỗ trợ ở v1.
+  positionMode: ONE_WAY
+
+# ========= TÍN HIỆU (EMA/RSI) =========
+signals:
+  emaShort: 20
+  emaLong: 50
+  rsiPeriod: 14
+  # Watchlist entry: chỉ mua khi RSI ∈ [rsiEntryMin, rsiEntryMax] (tránh đỉnh/trend yếu).
+  rsiEntryMin: 40
+  rsiEntryMax: 65
+  # Bottom reversal: RSI phải từng < rsiOversoldEnter rồi hồi qua rsiOversoldExit.
+  rsiOversoldEnter: 30
+  rsiOversoldExit: 35
+  # |EMA20-EMA50|/giá < ngưỡng này (%) → sideway.
+  sidewayEmaGapPct: 0.3
+  # Số nến gần nhất để confirm slope EMA20 (regression).
+  slopeConfirmBars: 3
+
+# ========= EXIT (TP/SL) =========
+# Có thể override per-symbol qua symbols.yml (vd coin biến động cao muốn TP/SL xa hơn).
+exit:
+  takeProfitPct: 5.0               # TP lần 1 (% so giá entry)
+  partialTpRatio: 0.5              # TP lần 1 và trend còn UP → bán 50%, giữ 50% chờ TP kế
+  trailingTpStepPct: 3.0           # Mỗi lần partial TP, nâng ngưỡng TP kế +3%
+  stopLossPct: 4.0                 # SL (% so giá entry). Altcoin biến động → nới 4% để tránh wick false.
+  maxDropChecks: 1                 # Dính SL là bán ngay, KHÔNG chờ tick sau. Altcoin cascade dump → cắt quyết liệt.
+  recoveryResetPct: -2.0           # Hồi về > ngưỡng này → reset dropCheckCount (match với SL mới)
+  breakevenAfterPartialTp: true    # Sau partial TP dời SL về breakeven
+  cooldownAfterLossHours: 4        # Sau stop-loss không mua lại coin đó trong N giờ
+
+# ========= CAPITAL =========
+capital:
+  reservePct: 0.20                     # % vốn gốc giữ làm reserveFund (dùng cho scanner opportunity)
+  v0SnapshotEveryHours: 24             # Mỗi 24h snapshot lại v0 (chỉ khi không có position mở)
+  minTradeSizeUsdt: 10.0               # Lệnh < số này sẽ bị skip (tránh phí cao)
+  reserveAllocPerOpportunityUsdt: 50.0 # Trần mỗi lần rút reserveFund vào 1 coin scanner
+
+# ========= RISK =========
+risk:
+  dailyDrawdownPct: 0.10               # Equity giảm > 10% trong ngày → kill-switch. Altcoin biến động mạnh, 5% quá chặt dễ false-trigger.
+  pauseHours: 24                       # Kill-switch pause trong N giờ
+  maxConcurrentPositions: 3            # Với vốn ~38 USDT + minTradeSize=10 + reservePct=20% → chỉ đủ 3 lệnh đồng thời
+  maxPnlPctEligibleForRebalance: 2.0   # Coin có pnl < X% + trend không tăng → có thể rebalance bán
+  # --- FUTURES ONLY ---
+  liquidationBufferPct: 30             # Lỗ max cho phép = 30% khoảng cách (entry → liqPrice)
+  maxExposurePctOfEquity: 80           # Tổng notional mở <= 80% equity (tránh overleverage)
+  fundingGuardEnabled: true
+  fundingMaxAcceptablePctPer8h: 0.05   # Funding > 0.05%/8h (~5.5%/tháng) → không mở long mới
+
+# ========= WATCHLIST =========
+watchlist:
+  buyOnStart: false                    # true = mua ngay khi start nếu thoả entry. false = chờ crossover mới.
+  symbols: []                          # Để trống → bot dựa hoàn toàn scanner. Muốn ép vài coin thì thêm vào đây, vd: [SOLUSDT, AVAXUSDT]
+
+# ========= SCANNER =========
+scanner:
+  enabled: true                         # false = reserveFund đóng băng, chỉ trade watchlist
+  topN: 30
+  minQuoteVolume24hUsdt: 50000000       # Volume 24h tối thiểu để xét (loại coin thanh khoản thấp)
+  blacklist:
+    - BTCUSDT
+    - ETHUSDT
+    - BNBUSDT
+    - BTCDOMUSDT
+    - USDCUSDT
+    - FDUSDUSDT
+    - BUSDUSDT
+    - TUSDUSDT
+    - USD1USDT
+    - RLUSDUSDT
+
+# ========= TIMEFRAMES =========
+timeframes:
+  primary: 1h                           # 15m | 30m | 1h | 2h | 4h
+  confirm: 4h                           # Xác nhận trend lớn cho scanner
+
+# ========= SCHEDULING =========
+scheduling:
+  tickMinutes: 15                       # Chu kỳ tick chính (check TP/SL/scan)
+  cleanupHourVN: 2                      # Giờ (VN) xoá JSONL cũ
+  dailyReportHourVN: 8                  # Giờ (VN) gửi báo cáo Telegram
+
+# ========= STORAGE =========
+storage:
+  dataDir: ./data                       # state.json + trades/orders/signals/equity jsonl
+  keepDays: 30
+
+# ========= LOGGING =========
+logging:
+  console: true
+  file: true
+  level: INFO                           # DEBUG | INFO | WARN | ERROR
+
+# ========= TELEGRAM =========
+telegram:
+  enabled: true
+  # Các event nhận alert (bỏ event nào không cần).
+  # Loại: ENTRY, PARTIAL_TP, FULL_TP, STOP_LOSS, KILL_SWITCH, REBALANCE,
+  #       OPPORTUNITY_MISSED, LIQUIDATION_WARN, FUNDING_HIGH,
+  #       CONFIG_RELOADED, ERROR, DAILY_REPORT, APP_START, APP_STOP
+  alertEvents:
+    - ENTRY
+    - PARTIAL_TP
+    - FULL_TP
+    - STOP_LOSS
+    - KILL_SWITCH
+    - REBALANCE
+    - OPPORTUNITY_MISSED
+    - LIQUIDATION_WARN
+    - FUNDING_HIGH
+    - CONFIG_RELOADED
+    - ERROR
+    - DAILY_REPORT
+    - APP_START
+    - APP_STOP
+
+# ========= DYNAMIC CONFIG =========
+dynamic:
+  hotReload: true                       # true = sửa file YAML bot tự reload
+  reloadDebounceMs: 2000                # Gom các event ghi file liên tiếp
+  telegramControl: true                 # true = nhận lệnh /pause /resume /reload /closeAll /status qua Telegram
+
+# ========= PER-SYMBOL OVERRIDE (tuỳ chọn) =========
+# Thường để trống. Nếu muốn override riêng từng coin → tạo file symbols.yml
+# cạnh jar với dạng:
+#
+#   DOGEUSDT:
+#     leverage: 3
+#     exit:
+#       takeProfitPct: 8.0
+#       stopLossPct: 4.0
+#
+# File symbols.yml sẽ override field `symbols` dưới đây.
+symbols: {}

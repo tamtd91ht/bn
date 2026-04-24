@@ -1,0 +1,11 @@
+
+target/
+.env
+data/
+logs/
+*.log
+*.iml
+.idea/
+.claude/
+# Secrets bundled vào jar — chứa API key thật, KHÔNG commit
+src/main/resources/secrets.properties
