@@ -31,6 +31,13 @@ public final class Position {
     public double currentTpPct;
     public double currentSlPct;
 
+    /** Qty ban đầu khi mở position (KHÔNG đổi sau partial TP). Dùng để tính
+     *  "đã co bao nhiêu %" → quyết định có cho top-up không. Top-up KHÔNG ghi đè. */
+    public BigDecimal originalQty;
+
+    /** Số lần top-up đã thực hiện. Chặn bởi capital.topUpMaxCount. */
+    public int topUpCount;
+
     // ======== FUTURES-ONLY (null nếu spot) ========
 
     /** "LONG" | "SHORT" | null (spot = null ~ LONG). */
@@ -87,6 +94,8 @@ public final class Position {
         Position p = new Position();
         p.symbol = symbol;
         p.qty = qty;
+        p.originalQty = qty;
+        p.topUpCount = 0;
         p.entryPrice = entryPrice;
         p.entryAt = Instant.now();
         p.source = source;
@@ -95,6 +104,31 @@ public final class Position {
         p.currentTpPct = tpPct;
         p.currentSlPct = slPct;
         return p;
+    }
+
+    /**
+     * Top-up vào position đang mở: weighted-average entry price, cộng qty,
+     * reset drop counter (vì đã "vào lại" như entry mới), tăng topUpCount.
+     * originalQty KHÔNG đổi - giữ làm anchor để tính shrink ratio cho các lần top-up kế tiếp.
+     */
+    public void mergeTopUp(BigDecimal addQty, BigDecimal addPrice) {
+        BigDecimal oldValue = entryPrice.multiply(qty);
+        BigDecimal addValue = addPrice.multiply(addQty);
+        BigDecimal newQty = qty.add(addQty);
+        this.entryPrice = oldValue.add(addValue)
+                .divide(newQty, 8, java.math.RoundingMode.HALF_UP);
+        this.qty = newQty;
+        this.topUpCount++;
+        this.dropCheckCount = 0;
+        if (this.notionalUsdt != null) {
+            this.notionalUsdt = newQty.multiply(this.entryPrice);
+            if (this.leverage != null && this.leverage > 1) {
+                this.marginUsdt = this.notionalUsdt.divide(
+                        BigDecimal.valueOf(this.leverage), 8, java.math.RoundingMode.HALF_UP);
+            } else {
+                this.marginUsdt = this.notionalUsdt;
+            }
+        }
     }
 
     /** true nếu vị thế LONG (hoặc spot ≡ LONG). */

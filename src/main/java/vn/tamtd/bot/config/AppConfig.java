@@ -194,8 +194,25 @@ public record AppConfig(
             double reservePct,
             int v0SnapshotEveryHours,
             double minTradeSizeUsdt,
-            double reserveAllocPerOpportunityUsdt
-    ) {}
+            double reserveAllocPerOpportunityUsdt,
+            /** Cho phép mua lại chính coin đang hold sau khi đã partial TP (pyramid add).
+             *  Default false để giữ hành vi v1: mỗi coin = 1 entry. */
+            Boolean allowTopUpAfterPartial,
+            /** Chỉ top-up nếu position hiện còn < X% originalQty (VD 0.5 = đã bán hơn 1 nửa).
+             *  Tránh pyramid liên tục khi partial mới xảy ra 1 chút. */
+            Double topUpMinShrinkRatio,
+            /** Tổng số lần top-up tối đa cho 1 position (tránh "all-in" cascade). */
+            Integer topUpMaxCount
+    ) {
+        public Capital {
+            if (allowTopUpAfterPartial == null) allowTopUpAfterPartial = false;
+            if (topUpMinShrinkRatio == null) topUpMinShrinkRatio = 0.5;
+            if (topUpMaxCount == null) topUpMaxCount = 2;
+        }
+        public boolean allowTopUpAfterPartialV() { return allowTopUpAfterPartial; }
+        public double topUpMinShrinkRatioV() { return topUpMinShrinkRatio; }
+        public int topUpMaxCountV() { return topUpMaxCount; }
+    }
 
     public record Risk(
             double dailyDrawdownPct,

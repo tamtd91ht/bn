@@ -67,6 +67,17 @@ capital:
   minTradeSizeUsdt: 10.0               # Lệnh < số này sẽ bị skip (tránh phí cao)
   reserveAllocPerOpportunityUsdt: 50.0 # Trần mỗi lần rút reserveFund vào 1 coin scanner
 
+  # --- TOP-UP (pyramid add vào coin đang hold) ---
+  # Mặc định false = v1 behavior: mỗi coin chỉ 1 entry, signal lặp lại bị skip.
+  # Bật true để bot "nạp lại" khi đã partial TP mà sóng vẫn còn. Rủi ro:
+  # averaging entry cao hơn, SL sẽ cắt cả lot to hơn. Cần test kỹ trước khi chạy live.
+  allowTopUpAfterPartial: false
+  # Chỉ top-up nếu position hiện tại còn < X% qty ban đầu (đã partial đủ để có room).
+  # 0.5 = đã bán hơn 1 nửa. Thấp hơn → chặt hơn (hiếm khi top-up).
+  topUpMinShrinkRatio: 0.5
+  # Số lần top-up tối đa cho 1 position. 2 = tối đa 3 lệnh (1 entry gốc + 2 top-up).
+  topUpMaxCount: 2
+
 # ========= RISK =========
 risk:
   dailyDrawdownPct: 0.10               # Equity giảm > 10% trong ngày → kill-switch. Altcoin biến động mạnh, 5% quá chặt dễ false-trigger.

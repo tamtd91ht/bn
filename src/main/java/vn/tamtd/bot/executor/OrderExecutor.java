@@ -172,27 +172,44 @@ public final class OrderExecutor {
 
         // === Update state ===
         double reserveBefore = state.reserveFund;
-        if ("SCANNER".equals(d.source())) {
+        boolean isScannerSource = d.source() != null && d.source().startsWith("SCANNER");
+        if (isScannerSource) {
             state.reserveFund -= fill.cummulativeQuoteQty().doubleValue();
             if (state.reserveFund < 0) state.reserveFund = 0;
         }
         AppConfig.Exit exitCfg = config.exitFor(d.symbol());
+        Position existing = state.positions.get(d.symbol());
+        boolean isTopUp = existing != null && d.source() != null && d.source().endsWith("_TOPUP");
         Position p;
-        if (mode.isFutures()) {
-            BigDecimal liqPrice = fetchLiquidationPrice(d.symbol());
-            p = Position.futuresEntry(d.symbol(), "LONG",
-                    fill.executedQty(), fill.avgPrice(),
-                    leverage, liqPrice, d.source(),
-                    exitCfg.takeProfitPctV(), -exitCfg.stopLossPctV());
+        if (isTopUp) {
+            // Top-up: weighted-avg entry + cộng qty vào position hiện tại, KHÔNG ghi đè.
+            // Giữ currentTpPct / currentSlPct hiện tại (ngưỡng trailing đã tiến lên sau partial).
+            existing.mergeTopUp(fill.executedQty(), fill.avgPrice());
+            p = existing;
+            log.info("[BUY:TOPUP] {} merged qty+={} @ {} → total qty={} newAvgEntry={} topUpCount={}",
+                    d.symbol(),
+                    fill.executedQty().toPlainString(),
+                    fill.avgPrice().toPlainString(),
+                    p.qty.toPlainString(),
+                    p.entryPrice.toPlainString(),
+                    p.topUpCount);
         } else {
-            p = Position.spotEntry(d.symbol(),
-                    fill.executedQty(), fill.avgPrice(), d.source(),
-                    exitCfg.takeProfitPctV(), -exitCfg.stopLossPctV());
+            if (mode.isFutures()) {
+                BigDecimal liqPrice = fetchLiquidationPrice(d.symbol());
+                p = Position.futuresEntry(d.symbol(), "LONG",
+                        fill.executedQty(), fill.avgPrice(),
+                        leverage, liqPrice, d.source(),
+                        exitCfg.takeProfitPctV(), -exitCfg.stopLossPctV());
+            } else {
+                p = Position.spotEntry(d.symbol(),
+                        fill.executedQty(), fill.avgPrice(), d.source(),
+                        exitCfg.takeProfitPctV(), -exitCfg.stopLossPctV());
+            }
+            state.positions.put(d.symbol(), p);
         }
-        state.positions.put(d.symbol(), p);
         stateStore.save(state);
 
-        log.info("[BUY:FILLED] {} qty={} @ avg={} notional={} margin={} tp={}% sl={}% lev={} liq={} reserve {}→{}",
+        log.info("[BUY:FILLED] {} qty={} @ avg={} notional={} margin={} tp={}% sl={}% lev={} liq={} reserve {}→{}{}",
                 d.symbol(),
                 fill.executedQty().toPlainString(),
                 fill.avgPrice().toPlainString(),
@@ -202,10 +219,12 @@ public final class OrderExecutor {
                 String.format("%.2f", p.currentSlPct),
                 p.leverage, p.liquidationPrice,
                 String.format("%.4f", reserveBefore),
-                String.format("%.4f", state.reserveFund));
+                String.format("%.4f", state.reserveFund),
+                isTopUp ? " [TOP-UP]" : "");
 
         notifier.send(NotifyEvent.ENTRY, String.format(
-                "ENTRY %s %s @ %s (qty=%s) lev=%sx source=%s",
+                "%s %s %s @ %s (qty=%s) lev=%sx source=%s",
+                isTopUp ? "TOP-UP" : "ENTRY",
                 d.symbol(),
                 fill.cummulativeQuoteQty().toPlainString() + " USDT notional",
                 fill.avgPrice().toPlainString(),

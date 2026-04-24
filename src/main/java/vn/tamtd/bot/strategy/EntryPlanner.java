@@ -9,6 +9,7 @@ import vn.tamtd.bot.indicator.TrendIndicators;
 import vn.tamtd.bot.marketdata.BarSeriesCache;
 import vn.tamtd.bot.scanner.ScanResult;
 import vn.tamtd.bot.storage.BotState;
+import vn.tamtd.bot.storage.Position;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -70,9 +71,12 @@ public final class EntryPlanner {
                 log.debug("[ENTRY-W] {} disabled qua symbols.yml - skip", symbol);
                 continue;
             }
-            if (state.positions.containsKey(symbol)) continue;
+            Position held = state.positions.get(symbol);
+            boolean isTopUp = held != null;
+            if (isTopUp && !canTopUp(held, config)) continue;
             if (isInCooldown(state, symbol)) continue;
-            if (state.positions.size() >= config.risk().maxConcurrentPositions()) {
+            // Top-up không chiếm thêm slot (đã count trong state.positions rồi)
+            if (!isTopUp && state.positions.size() >= config.risk().maxConcurrentPositions()) {
                 log.info("[ENTRY-W] {} đã đạt maxConcurrentPositions={} - skip",
                         symbol, config.risk().maxConcurrentPositions());
                 continue;
@@ -95,11 +99,22 @@ public final class EntryPlanner {
 
                 BigDecimal alloc = BigDecimal.valueOf(allocPerCoin)
                         .setScale(8, RoundingMode.DOWN);
-                String reason = String.format("Watchlist entry: trend=UP, RSI=%.1f ∈ [%d,%d]",
-                        rsi, rsiMin, rsiMax);
-                log.info("[ENTRY-W] {} PASS → plan LONG {} USDT",
-                        symbol, alloc.toPlainString());
-                decisions.add(new Decision.EntryBuy(symbol, alloc, "WATCHLIST", reason));
+                if (isTopUp) {
+                    alloc = capTopUpAlloc(held, alloc);
+                    if (alloc.compareTo(BigDecimal.valueOf(config.capital().minTradeSizeUsdt())) < 0) {
+                        log.info("[ENTRY-W:TOPUP] {} missing room < minTradeSize - skip", symbol);
+                        continue;
+                    }
+                }
+                String source = isTopUp ? "WATCHLIST_TOPUP" : "WATCHLIST";
+                String reason = String.format("%s: trend=UP, RSI=%.1f ∈ [%d,%d]%s",
+                        isTopUp ? "Watchlist top-up" : "Watchlist entry",
+                        rsi, rsiMin, rsiMax,
+                        isTopUp ? String.format(" (topUp #%d, shrink %.0f%%)",
+                                held.topUpCount + 1, (1.0 - shrinkRatio(held)) * 100) : "");
+                log.info("[ENTRY-W] {} PASS → plan {} {} USDT",
+                        symbol, isTopUp ? "TOP-UP" : "LONG", alloc.toPlainString());
+                decisions.add(new Decision.EntryBuy(symbol, alloc, source, reason));
             } catch (Exception e) {
                 log.warn("[ENTRY-W] {} check lỗi: {}", symbol, e.getMessage());
             }
@@ -139,12 +154,16 @@ public final class EntryPlanner {
                 runningFree.toPlainString(), allocPerOp.toPlainString(), minSize.toPlainString(),
                 watchlistEmpty ? "SCANNER_ONLY" : "MIXED");
 
+        int newSymbolsSoFar = 0;
         for (ScanResult r : scanResults) {
             if (r.signal() == ScanResult.Signal.NONE) continue;
             if (!config.isSymbolEnabled(r.symbol())) continue;
-            if (state.positions.containsKey(r.symbol())) continue;
+            Position held = state.positions.get(r.symbol());
+            boolean isTopUp = held != null;
+            if (isTopUp && !canTopUp(held, config)) continue;
             if (isInCooldown(state, r.symbol())) continue;
-            if (state.positions.size() + decisions.size() >= maxConc) break;
+            // Top-up không chiếm slot mới; chỉ đếm new symbols vào quota maxConc
+            if (!isTopUp && state.positions.size() + newSymbolsSoFar >= maxConc) break;
             if (!fundingGuard.allowsLong(r.symbol())) continue;
 
             if (runningFree.compareTo(minSize) < 0) {
@@ -153,14 +172,51 @@ public final class EntryPlanner {
                 break;
             }
             BigDecimal alloc = allocPerOp.min(runningFree).setScale(8, RoundingMode.DOWN);
-            String reason = String.format("Scanner signal=%s score=%.2f qv=%,.0f",
-                    r.signal(), r.score(), r.quoteVolume24h());
-            log.info("[ENTRY-S] {} PASS signal={} → plan LONG {} USDT",
-                    r.symbol(), r.signal(), alloc.toPlainString());
-            decisions.add(new Decision.EntryBuy(r.symbol(), alloc, "SCANNER", reason));
+            if (isTopUp) {
+                alloc = capTopUpAlloc(held, alloc);
+                if (alloc.compareTo(minSize) < 0) {
+                    log.info("[ENTRY-S:TOPUP] {} missing room < minSize - skip",
+                            r.symbol());
+                    continue;
+                }
+            }
+            String source = isTopUp ? "SCANNER_TOPUP" : "SCANNER";
+            String reason = String.format("Scanner %s signal=%s score=%.2f qv=%,.0f%s",
+                    isTopUp ? "top-up" : "signal",
+                    r.signal(), r.score(), r.quoteVolume24h(),
+                    isTopUp ? String.format(" (topUp #%d, shrink %.0f%%)",
+                            held.topUpCount + 1, (1.0 - shrinkRatio(held)) * 100) : "");
+            log.info("[ENTRY-S] {} PASS signal={} → plan {} {} USDT",
+                    r.symbol(), r.signal(), isTopUp ? "TOP-UP" : "LONG", alloc.toPlainString());
+            decisions.add(new Decision.EntryBuy(r.symbol(), alloc, source, reason));
             runningFree = runningFree.subtract(alloc);
+            if (!isTopUp) newSymbolsSoFar++;
         }
         return decisions;
+    }
+
+    /** Điều kiện cho phép top-up: flag bật + position đã partial TP đủ sâu + chưa hit max. */
+    private boolean canTopUp(Position held, AppConfig config) {
+        AppConfig.Capital cap = config.capital();
+        if (!cap.allowTopUpAfterPartialV()) return false;
+        if (held.tpLevelsHit < 1) return false;
+        if (held.topUpCount >= cap.topUpMaxCountV()) return false;
+        if (held.originalQty == null || held.originalQty.signum() == 0) return false;
+        return shrinkRatio(held) < cap.topUpMinShrinkRatioV();
+    }
+
+    /** qty / originalQty - càng nhỏ = position càng co lại sau partial TP. */
+    private double shrinkRatio(Position held) {
+        if (held.originalQty == null || held.originalQty.signum() == 0) return 1.0;
+        return held.qty.doubleValue() / held.originalQty.doubleValue();
+    }
+
+    /** Trần top-up alloc = "USDT còn thiếu để khôi phục size gốc" (tránh pyramid quá mức). */
+    private BigDecimal capTopUpAlloc(Position held, BigDecimal allocPerOp) {
+        if (held.originalQty == null) return allocPerOp;
+        BigDecimal missing = held.originalQty.subtract(held.qty).multiply(held.entryPrice);
+        if (missing.signum() <= 0) return BigDecimal.ZERO;
+        return allocPerOp.min(missing).setScale(8, RoundingMode.DOWN);
     }
 
     private boolean isInCooldown(BotState state, String symbol) {
