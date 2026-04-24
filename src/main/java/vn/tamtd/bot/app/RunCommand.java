@@ -29,6 +29,7 @@ import vn.tamtd.bot.storage.CleanupJob;
 import vn.tamtd.bot.storage.JsonlWriter;
 import vn.tamtd.bot.storage.Position;
 import vn.tamtd.bot.storage.StateStore;
+import vn.tamtd.bot.strategy.AccountCache;
 import vn.tamtd.bot.strategy.CapitalInitializer;
 import vn.tamtd.bot.strategy.EntryPlanner;
 import vn.tamtd.bot.strategy.FundingRateGuard;
@@ -115,16 +116,17 @@ public final class RunCommand implements Callable<Integer> {
         FundingRateGuard fundingGuard = new FundingRateGuard(registry, exchangeClient, notifier);
         LiquidationGuard liquidationGuard = new LiquidationGuard(registry, notifier);
 
-        PositionManager positionManager = new PositionManager(registry, trendIndicators, filterCache);
-        EntryPlanner entryPlanner = new EntryPlanner(registry, trendIndicators, barSeriesCache, fundingGuard);
-        RebalanceManager rebalanceManager = new RebalanceManager(registry, trendIndicators, barSeriesCache);
         CapitalInitializer capitalInitializer = new CapitalInitializer(registry, exchangeClient);
+        AccountCache accountCache = new AccountCache(capitalInitializer);
+        PositionManager positionManager = new PositionManager(registry, trendIndicators, filterCache);
+        EntryPlanner entryPlanner = new EntryPlanner(registry, trendIndicators, barSeriesCache, fundingGuard, accountCache);
+        RebalanceManager rebalanceManager = new RebalanceManager(registry, trendIndicators, barSeriesCache);
         StrategyCoordinator coordinator = new StrategyCoordinator(
                 registry, exchangeClient, barSeriesCache, trendIndicators, scanner,
                 positionManager, entryPlanner, rebalanceManager, liquidationGuard,
                 capitalInitializer, notifier);
         OrderExecutor orderExecutor = new OrderExecutor(
-                registry, exchangeClient, gateway, filterCache, jsonlWriter, stateStore, notifier);
+                registry, exchangeClient, gateway, filterCache, jsonlWriter, stateStore, notifier, accountCache);
 
         TickLoop tickLoop = new TickLoop(
                 registry, capitalInitializer, coordinator, orderExecutor,

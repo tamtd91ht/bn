@@ -29,15 +29,18 @@ public final class EntryPlanner {
     private final TrendIndicators trendIndicators;
     private final BarSeriesCache barSeriesCache;
     private final FundingRateGuard fundingGuard;
+    private final AccountCache accountCache;
 
     public EntryPlanner(ConfigRegistry configRegistry,
                         TrendIndicators trendIndicators,
                         BarSeriesCache barSeriesCache,
-                        FundingRateGuard fundingGuard) {
+                        FundingRateGuard fundingGuard,
+                        AccountCache accountCache) {
         this.configRegistry = configRegistry;
         this.trendIndicators = trendIndicators;
         this.barSeriesCache = barSeriesCache;
         this.fundingGuard = fundingGuard;
+        this.accountCache = accountCache;
     }
 
     public List<Decision.EntryBuy> planWatchlistEntries(BotState state) {
@@ -45,15 +48,13 @@ public final class EntryPlanner {
         List<Decision.EntryBuy> decisions = new ArrayList<>();
         List<String> symbols = config.watchlist().symbols();
         if (symbols.isEmpty()) return decisions;
-        if (state.v0 <= 0) {
-            log.warn("[ENTRY-W] v0={} chưa snapshot - skip watchlist", state.v0);
-            return decisions;
-        }
 
-        double activeCapital = state.v0 * (1.0 - config.capital().reservePct());
+        // Size lệnh lấy theo FREE USDT thật (tôn trọng nạp/rút thủ công) thay vì v0 cache.
+        double freeUsdt = accountCache.freeUsdt().doubleValue();
+        double activeCapital = freeUsdt * (1.0 - config.capital().reservePct());
         double allocPerCoin = activeCapital / symbols.size();
-        log.info("[ENTRY-W] Plan watchlist: {} activeCapital={} allocPerCoin={}",
-                symbols, fmt(activeCapital), fmt(allocPerCoin));
+        log.info("[ENTRY-W] Plan watchlist: {} freeUsdt={} activeCapital={} allocPerCoin={}",
+                symbols, fmt(freeUsdt), fmt(activeCapital), fmt(allocPerCoin));
         if (allocPerCoin < config.capital().minTradeSizeUsdt()) {
             log.warn("[ENTRY-W] allocPerCoin {} < minTradeSize {} - skip tick",
                     fmt(allocPerCoin), config.capital().minTradeSizeUsdt());
@@ -113,18 +114,29 @@ public final class EntryPlanner {
 
         int maxConc = config.risk().maxConcurrentPositions();
         boolean watchlistEmpty = config.watchlist().symbols().isEmpty();
-        // Scanner-only mode (watchlist rỗng): chia đều v0 cho maxConcurrent slot,
-        // không dùng reserveAllocPerOpportunityUsdt (vốn chỉ dành cho scanner "cơ hội vàng"
-        // khi watchlist đã chiếm activeCapital).
-        // Buffer 2% = phí taker 0.1%/lệnh + float precision (cumQuote lệch quoteOrderQty)
-        // → tránh Binance reject -2010 "insufficient balance" ở lệnh cuối.
-        BigDecimal allocPerOp = watchlistEmpty && state.v0 > 0
-                ? BigDecimal.valueOf(state.v0 * 0.98 / maxConc).setScale(8, RoundingMode.DOWN)
-                : BigDecimal.valueOf(config.capital().reserveAllocPerOpportunityUsdt());
         BigDecimal minSize = BigDecimal.valueOf(config.capital().minTradeSizeUsdt());
-        BigDecimal reserve = BigDecimal.valueOf(state.reserveFund);
-        log.info("[ENTRY-S] Scanner reserve={} allocPerOp={} minSize={} mode={}",
-                reserve.toPlainString(), allocPerOp.toPlainString(), minSize.toPlainString(),
+
+        // Size lệnh dựa trên FREE USDT thật trên Binance (có cache trong AccountCache)
+        // thay vì state.v0 cache trong state file - user có thể nạp/rút USDT thủ công
+        // hoặc lệnh trước đã ăn fee → v0 cache không phản ánh đúng số tiền sẵn sàng đặt.
+        //
+        // Scanner-only mode: chia free USDT cho số slot còn trống (maxConc − positions mở).
+        // Buffer 2% = phí taker 0.1%/lệnh + float precision → tránh -2010 "insufficient balance".
+        // Mixed mode: vẫn dùng reserveAllocPerOpportunityUsdt (cơ hội scanner chỉ rút trần cố định).
+        BigDecimal allocPerOp;
+        BigDecimal runningFree;
+        if (watchlistEmpty) {
+            BigDecimal freeUsdt = accountCache.freeUsdt();
+            int remainingSlots = Math.max(1, maxConc - state.positions.size());
+            allocPerOp = freeUsdt.multiply(BigDecimal.valueOf(0.98))
+                    .divide(BigDecimal.valueOf(remainingSlots), 8, RoundingMode.DOWN);
+            runningFree = freeUsdt;
+        } else {
+            allocPerOp = BigDecimal.valueOf(config.capital().reserveAllocPerOpportunityUsdt());
+            runningFree = accountCache.freeUsdt();
+        }
+        log.info("[ENTRY-S] Scanner freeUsdt={} allocPerOp={} minSize={} mode={}",
+                runningFree.toPlainString(), allocPerOp.toPlainString(), minSize.toPlainString(),
                 watchlistEmpty ? "SCANNER_ONLY" : "MIXED");
 
         for (ScanResult r : scanResults) {
@@ -135,17 +147,18 @@ public final class EntryPlanner {
             if (state.positions.size() + decisions.size() >= maxConc) break;
             if (!fundingGuard.allowsLong(r.symbol())) continue;
 
-            if (reserve.compareTo(minSize) < 0) {
-                log.info("[ENTRY-S] reserve hết < minSize - break");
+            if (runningFree.compareTo(minSize) < 0) {
+                log.info("[ENTRY-S] freeUsdt còn {} < minSize {} - break",
+                        runningFree.toPlainString(), minSize.toPlainString());
                 break;
             }
-            BigDecimal alloc = allocPerOp.min(reserve);
+            BigDecimal alloc = allocPerOp.min(runningFree).setScale(8, RoundingMode.DOWN);
             String reason = String.format("Scanner signal=%s score=%.2f qv=%,.0f",
                     r.signal(), r.score(), r.quoteVolume24h());
             log.info("[ENTRY-S] {} PASS signal={} → plan LONG {} USDT",
                     r.symbol(), r.signal(), alloc.toPlainString());
             decisions.add(new Decision.EntryBuy(r.symbol(), alloc, "SCANNER", reason));
-            reserve = reserve.subtract(alloc);
+            runningFree = runningFree.subtract(alloc);
         }
         return decisions;
     }

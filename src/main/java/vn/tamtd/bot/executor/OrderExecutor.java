@@ -19,6 +19,7 @@ import vn.tamtd.bot.storage.BotState;
 import vn.tamtd.bot.storage.JsonlWriter;
 import vn.tamtd.bot.storage.Position;
 import vn.tamtd.bot.storage.StateStore;
+import vn.tamtd.bot.strategy.AccountCache;
 import vn.tamtd.bot.strategy.Decision;
 
 import java.math.BigDecimal;
@@ -45,6 +46,7 @@ public final class OrderExecutor {
     private final JsonlWriter jsonlWriter;
     private final StateStore stateStore;
     private final Notifier notifier;
+    private final AccountCache accountCache;
 
     public OrderExecutor(ConfigRegistry configRegistry,
                          ExchangeClient exchangeClient,
@@ -52,7 +54,8 @@ public final class OrderExecutor {
                          FilterCache filterCache,
                          JsonlWriter jsonlWriter,
                          StateStore stateStore,
-                         Notifier notifier) {
+                         Notifier notifier,
+                         AccountCache accountCache) {
         this.configRegistry = configRegistry;
         this.exchangeClient = exchangeClient;
         this.gateway = gateway;
@@ -60,6 +63,7 @@ public final class OrderExecutor {
         this.jsonlWriter = jsonlWriter;
         this.stateStore = stateStore;
         this.notifier = notifier;
+        this.accountCache = accountCache;
     }
 
     public void execute(Decision decision, BotState state, long tickTs) {
@@ -102,17 +106,23 @@ public final class OrderExecutor {
         }
         BigDecimal quote = d.quoteAmount().setScale(filter.quoteAssetPrecision(),
                 RoundingMode.DOWN);
-        if (quote.compareTo(filter.minNotional()) < 0) {
-            log.warn("[BUY:REJECT] {} quote={} < MIN_NOTIONAL={} - bỏ qua",
-                    d.symbol(), quote, filter.minNotional());
-            return;
+
+        // Cap theo FREE USDT thật trên sàn (không tin state.reserveFund cache) -
+        // user có thể vừa rút USDT, hoặc lệnh trước đã ăn fee.
+        // Nếu quote > freeUsdt thì cắt xuống freeUsdt × 0.999 (buffer precision).
+        BigDecimal freeUsdt = accountCache.freeUsdt();
+        if (freeUsdt.signum() > 0 && quote.compareTo(freeUsdt) > 0) {
+            BigDecimal capped = freeUsdt.multiply(BigDecimal.valueOf(0.999))
+                    .setScale(filter.quoteAssetPrecision(), RoundingMode.DOWN);
+            log.warn("[BUY:CAP] {} quote {} > freeUsdt {} → cap xuống {}",
+                    d.symbol(), quote.toPlainString(), freeUsdt.toPlainString(),
+                    capped.toPlainString());
+            quote = capped;
         }
-        if ("SCANNER".equals(d.source())) {
-            if (state.reserveFund < quote.doubleValue()) {
-                log.warn("[BUY:REJECT] Scanner entry {} cần {} USDT nhưng reserveFund chỉ {} - skip",
-                        d.symbol(), quote, String.format("%.4f", state.reserveFund));
-                return;
-            }
+        if (quote.compareTo(filter.minNotional()) < 0) {
+            log.warn("[BUY:REJECT] {} quote={} < MIN_NOTIONAL={} (freeUsdt={}) - bỏ qua",
+                    d.symbol(), quote, filter.minNotional(), freeUsdt.toPlainString());
+            return;
         }
 
         ExchangeMode mode = config.mode();
@@ -157,6 +167,8 @@ public final class OrderExecutor {
             log.warn("[BUY:NOT_FILLED] {} status={}", d.symbol(), fill.status());
             return;
         }
+        // Free USDT/base asset đã thay đổi → lần read kế tiếp phải fetch lại
+        accountCache.invalidate();
 
         // === Update state ===
         double reserveBefore = state.reserveFund;
@@ -219,7 +231,24 @@ public final class OrderExecutor {
             return;
         }
 
-        BigDecimal qty = FilterUtil.roundQtyDown(qtyRequested.min(position.qty), filter);
+        // Cap qty theo free balance thật của base asset (SPOT only) - user có thể vừa mua/bán
+        // thủ công trên app Binance, làm state.positions.qty lệch với số coin thực có trong ví.
+        // Nếu bán quá free → Binance trả -2010. Futures dùng reduceOnly tách biệt, không cap ở đây.
+        BigDecimal targetQty = qtyRequested.min(position.qty);
+        if (!mode.isFutures()) {
+            BigDecimal freeBase = accountCache.freeAsset(filter.baseAsset());
+            if (freeBase.signum() > 0 && freeBase.compareTo(targetQty) < 0) {
+                log.warn("[SELL:CAP] {} requested={} > freeBase {} {} → cap xuống free",
+                        symbol, targetQty.toPlainString(),
+                        freeBase.toPlainString(), filter.baseAsset());
+                targetQty = freeBase;
+            } else if (freeBase.signum() == 0) {
+                log.warn("[SELL:REJECT] {} free {} = 0 (đã bán thủ công?) - bỏ qua",
+                        symbol, filter.baseAsset());
+                return;
+            }
+        }
+        BigDecimal qty = FilterUtil.roundQtyDown(targetQty, filter);
         if (qty == null || qty.signum() == 0) {
             log.warn("[SELL:REJECT] {} qty {} không đạt LOT_SIZE (min={}, step={})",
                     symbol, qtyRequested, filter.lotMinQty(), filter.lotStepSize());
@@ -256,6 +285,7 @@ public final class OrderExecutor {
             log.warn("[SELL:NOT_FILLED:{}] {} status={}", type, symbol, fill.status());
             return;
         }
+        accountCache.invalidate();
 
         BigDecimal remaining = position.qty.subtract(fill.executedQty()).max(BigDecimal.ZERO);
         boolean fullyClosed = closesPosition || remaining.signum() == 0;
