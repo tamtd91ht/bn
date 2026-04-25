@@ -158,7 +158,7 @@ public final class RunCommand implements Callable<Integer> {
                 registry, state, stateStore, exchangeClient, orderExecutor);
         tgController.start();
 
-        // Scheduler tick
+        // Scheduler tick chính (FULL: positions + scanner + entry)
         ScheduledExecutorService tickScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "tick-loop");
             t.setDaemon(false);
@@ -167,6 +167,26 @@ public final class RunCommand implements Callable<Integer> {
         long tickSec = TimeUnit.MINUTES.toSeconds(config.scheduling().tickMinutes());
         tickScheduler.scheduleAtFixedRate(tickLoop::safeTick, 5, tickSec, TimeUnit.SECONDS);
         log.info("TickLoop scheduled: mỗi {} phút", config.scheduling().tickMinutes());
+
+        // Scheduler fast-tick (POSITIONS_ONLY: chỉ TP/SL/kill-switch). Tắt nếu fastTickSeconds = 0.
+        ScheduledExecutorService fastTickScheduler = null;
+        int fastSec = config.scheduling().fastTickSecondsV();
+        if (fastSec > 0) {
+            TickLoop fastLoop = new TickLoop(
+                    registry, capitalInitializer, coordinator, orderExecutor,
+                    jsonlWriter, stateStore, state, TickLoop.Mode.POSITIONS_ONLY);
+            fastTickScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "fast-tick-loop");
+                t.setDaemon(false);
+                return t;
+            });
+            // Lệch pha với tick chính: bắt đầu sau 30s để không trùng burst
+            fastTickScheduler.scheduleAtFixedRate(fastLoop::safeTick, 30, fastSec, TimeUnit.SECONDS);
+            log.info("FastTickLoop scheduled: mỗi {} giây (positions-only)", fastSec);
+        } else {
+            log.info("FastTickLoop disabled (scheduling.fastTickSeconds=0)");
+        }
+        final ScheduledExecutorService fastTickSchedulerFinal = fastTickScheduler;
 
         String hostname = System.getenv().getOrDefault("HOSTNAME",
                 System.getenv().getOrDefault("COMPUTERNAME", "unknown-host"));
@@ -195,6 +215,7 @@ public final class RunCommand implements Callable<Integer> {
             tgController.stop();
             fileWatcher.stop();
             tickScheduler.shutdownNow();
+            if (fastTickSchedulerFinal != null) fastTickSchedulerFinal.shutdownNow();
             timeSync.stop();
             cleanupJob.stop();
             stateStore.save(state);

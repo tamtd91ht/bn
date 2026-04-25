@@ -41,6 +41,10 @@ public final class BotState {
     /** Manual pause qua Telegram {@code /pause}. Không kicked bởi kill-switch. */
     public boolean paused;
 
+    /** Số tick liên tiếp drawdown ≥ ngưỡng. Reset về 0 khi tick không lỗ. Khi đạt
+     *  {@code risk.killSwitchHysteresisTicks} → fire kill-switch. */
+    public int killSwitchTriggerCount;
+
     public BotState() {}
 
     public static BotState fresh() {

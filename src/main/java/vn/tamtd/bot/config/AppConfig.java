@@ -210,8 +210,16 @@ public record AppConfig(
             /** Futures only: tổng notional mở tối đa (% equity). */
             double maxExposurePctOfEquity,
             boolean fundingGuardEnabled,
-            double fundingMaxAcceptablePctPer8h
-    ) {}
+            double fundingMaxAcceptablePctPer8h,
+            /** Số tick liên tiếp drawdown >= ngưỡng mới fire kill-switch. Tránh false trigger từ wick.
+             *  1 = fire ngay (như cũ), 3 = cần 3 tick liên tiếp. */
+            Integer killSwitchHysteresisTicks
+    ) {
+        public Risk {
+            if (killSwitchHysteresisTicks == null) killSwitchHysteresisTicks = 1;
+        }
+        public int killSwitchHysteresisTicksV() { return killSwitchHysteresisTicks; }
+    }
 
     public record Watchlist(
             boolean buyOnStart,
@@ -243,8 +251,19 @@ public record AppConfig(
     public record Scheduling(
             int tickMinutes,
             int cleanupHourVN,
-            int dailyReportHourVN
-    ) {}
+            int dailyReportHourVN,
+            /** Fast loop chỉ check positions (TP/SL) mỗi N giây. 0 = tắt fast loop, dùng tick chính. */
+            Integer fastTickSeconds,
+            /** Bỏ qua check SL trong N giây sau khi entry để tránh fast-tick bán ngay sau entry slip. */
+            Integer entryGracePeriodSeconds
+    ) {
+        public Scheduling {
+            if (fastTickSeconds == null) fastTickSeconds = 0;
+            if (entryGracePeriodSeconds == null) entryGracePeriodSeconds = 0;
+        }
+        public int fastTickSecondsV() { return fastTickSeconds; }
+        public int entryGracePeriodSecondsV() { return entryGracePeriodSeconds; }
+    }
 
     public record Storage(
             String dataDir,

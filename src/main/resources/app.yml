@@ -78,6 +78,9 @@ risk:
   maxExposurePctOfEquity: 80           # Tổng notional mở <= 80% equity (tránh overleverage)
   fundingGuardEnabled: true
   fundingMaxAcceptablePctPer8h: 0.05   # Funding > 0.05%/8h (~5.5%/tháng) → không mở long mới
+  killSwitchHysteresisTicks: 3         # Cần drawdown ≥ ngưỡng trong N tick LIÊN TIẾP mới fire.
+                                       # 1 = nhạy (như cũ, dễ false trigger từ wick).
+                                       # 3 = cần ~3 phút liên tục lỗ (với fastTickSeconds=60).
 
 # ========= WATCHLIST =========
 watchlist:
@@ -108,7 +111,13 @@ timeframes:
 
 # ========= SCHEDULING =========
 scheduling:
-  tickMinutes: 15                       # Chu kỳ tick chính (check TP/SL/scan)
+  tickMinutes: 15                       # Chu kỳ tick chính (check TP/SL/scan + scanner + entry)
+  fastTickSeconds: 60                   # Fast loop chỉ check positions (TP/SL) mỗi N giây.
+                                        # 0 = tắt → chỉ tick chính như v1. Khuyến nghị 60s để
+                                        # SL phản ứng nhanh khi giá dump (tránh case lệch -3% như APE).
+                                        # Mỗi fast-tick tốn ~30 weight (1 ticker + 1 klines /position).
+  entryGracePeriodSeconds: 120          # Sau entry, skip SL check trong N giây để tránh fast-tick
+                                        # bán ngay nếu giá slip lúc fill. 0 = check ngay.
   cleanupHourVN: 2                      # Giờ (VN) xoá JSONL cũ
   dailyReportHourVN: 8                  # Giờ (VN) gửi báo cáo Telegram
 

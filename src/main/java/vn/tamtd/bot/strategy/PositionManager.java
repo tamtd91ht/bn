@@ -13,6 +13,8 @@ import vn.tamtd.bot.storage.Position;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 
 /**
@@ -59,6 +61,18 @@ public final class PositionManager {
         }
 
         if (pnlPct <= -exit.stopLossPctV()) {
+            // Grace period: bỏ qua SL trong N giây sau entry để tránh fast-tick bán vội
+            // do giá slip lúc fill (MARKET BUY có thể fill cao hơn ticker vài tick).
+            int graceSec = cfg.scheduling().entryGracePeriodSecondsV();
+            if (graceSec > 0 && position.entryAt != null) {
+                long sinceEntry = Duration.between(position.entryAt, Instant.now()).getSeconds();
+                if (sinceEntry < graceSec) {
+                    log.info("[POS:SL_GRACE] {} pnl={}% ≤ -slPct={}% nhưng mới entry {}s/{} - skip SL",
+                            position.symbol, fmt(pnlPct), fmt(exit.stopLossPctV()),
+                            sinceEntry, graceSec);
+                    return Optional.empty();
+                }
+            }
             log.info("[POS:SL] {} pnl={}% ≤ -slPct={}% → check dropCheckCount/trend",
                     position.symbol, fmt(pnlPct), fmt(exit.stopLossPctV()));
             return evaluateStopLoss(position, series, pnlPct, exit);

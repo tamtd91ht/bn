@@ -81,23 +81,58 @@ public final class StrategyCoordinator {
         this.notifier = notifier;
     }
 
+    /** Slow tick: check positions + scan + entries. Đầy đủ như v1. */
     public List<Decision> tick(BotState state) {
         List<Decision> decisions = new ArrayList<>();
+        if (isHaltedTick(state, "tick")) return decisions;
         AppConfig config = configRegistry.current();
 
-        boolean killedActive = state.killedUntil != null && Instant.now().isBefore(state.killedUntil);
-        if (state.paused || killedActive) {
-            if (killedActive) {
-                log.warn("[STRATEGY] Bot đang kill-switch cooldown (đến {}) - skip tick",
-                        state.killedUntil);
-            } else {
-                log.warn("[STRATEGY] Bot đang pause thủ công - skip tick");
-            }
+        Map<String, BigDecimal> prices = fetchPrices(state, config, /*entriesNeeded*/ true);
+        log.info("[STRATEGY] Fetched {} prices: {}", prices.size(), prices.keySet());
+
+        List<Decision> killAndPos = evaluatePositions(state, prices, config);
+        decisions.addAll(killAndPos);
+        // Nếu vừa fire kill-switch, không plan entry nữa
+        if (state.killedUntil != null && Instant.now().isBefore(state.killedUntil)) {
             return decisions;
         }
 
-        Map<String, BigDecimal> prices = fetchPrices(state, config);
-        log.info("[STRATEGY] Fetched {} prices: {}", prices.size(), prices.keySet());
+        decisions.addAll(planEntries(state, prices, config));
+        return decisions;
+    }
+
+    /** Fast tick: chỉ check positions (TP/SL/kill-switch). KHÔNG scan, KHÔNG entry. */
+    public List<Decision> tickPositions(BotState state) {
+        List<Decision> decisions = new ArrayList<>();
+        if (isHaltedTick(state, "fast-tick")) return decisions;
+        if (state.positions.isEmpty()) return decisions;
+        AppConfig config = configRegistry.current();
+
+        Map<String, BigDecimal> prices = fetchPrices(state, config, /*entriesNeeded*/ false);
+        log.info("[STRATEGY:FAST] Fetched {} prices: {}", prices.size(), prices.keySet());
+        decisions.addAll(evaluatePositions(state, prices, config));
+        return decisions;
+    }
+
+    private boolean isHaltedTick(BotState state, String label) {
+        boolean killedActive = state.killedUntil != null && Instant.now().isBefore(state.killedUntil);
+        if (state.paused || killedActive) {
+            if (killedActive) {
+                log.warn("[STRATEGY] Bot đang kill-switch cooldown (đến {}) - skip {}",
+                        state.killedUntil, label);
+            } else {
+                log.warn("[STRATEGY] Bot đang pause thủ công - skip {}", label);
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /** Kill-switch + per-position TP/SL/liquidation. Dùng chung cho tick chính lẫn fast-tick. */
+    private List<Decision> evaluatePositions(BotState state,
+                                             Map<String, BigDecimal> prices,
+                                             AppConfig config) {
+        List<Decision> decisions = new ArrayList<>();
 
         Optional<List<Decision>> killDecisions = checkKillSwitch(state, prices, config);
         if (killDecisions.isPresent()) {
@@ -113,7 +148,6 @@ public final class StrategyCoordinator {
             if (price == null) continue;
             posEval++;
 
-            // Liquidation guard đầu tiên (trước TP/SL thường)
             Optional<Decision> liqDec = liquidationGuard.evaluate(p, price);
             if (liqDec.isPresent()) {
                 decisions.add(liqDec.get());
@@ -135,7 +169,14 @@ public final class StrategyCoordinator {
             }
         }
         log.info("[STRATEGY] Đánh giá {} position", posEval);
+        return decisions;
+    }
 
+    /** Watchlist + scanner entry plan + missed alerts + rebalance. Chỉ dùng ở tick chính. */
+    private List<Decision> planEntries(BotState state,
+                                       Map<String, BigDecimal> prices,
+                                       AppConfig config) {
+        List<Decision> decisions = new ArrayList<>();
         List<Decision.EntryBuy> wlEntries = entryPlanner.planWatchlistEntries(state);
         decisions.addAll(wlEntries);
 
@@ -154,7 +195,6 @@ public final class StrategyCoordinator {
                 rebalanceManager.findCoinToFreeReserve(state, prices).ifPresent(decisions::add);
             }
         }
-
         return decisions;
     }
 
@@ -224,18 +264,40 @@ public final class StrategyCoordinator {
             log.warn("[KILL-SWITCH] Không có price cho position nào - skip kill-switch tick này");
             return Optional.empty();
         }
-        // Unrealized lỗ > ngưỡng drawdown (% v0) → trigger
+        // Unrealized lỗ > ngưỡng drawdown (% v0) → tăng counter; nếu không lỗ thì reset.
         double drawdown = -unrealizedPnl / state.v0;
-        if (drawdown < config.risk().dailyDrawdownPct()) return Optional.empty();
+        double threshold = config.risk().dailyDrawdownPct();
+        int hysteresis = Math.max(1, config.risk().killSwitchHysteresisTicksV());
 
-        log.error("=== KILL-SWITCH ===");
+        if (drawdown < threshold) {
+            if (state.killSwitchTriggerCount > 0) {
+                log.info("[KILL-SWITCH] Recovery: drawdown {} < threshold {} → reset counter từ {} về 0",
+                        String.format("%.2f%%", drawdown * 100),
+                        String.format("%.2f%%", threshold * 100),
+                        state.killSwitchTriggerCount);
+                state.killSwitchTriggerCount = 0;
+            }
+            return Optional.empty();
+        }
+
+        state.killSwitchTriggerCount++;
+        if (state.killSwitchTriggerCount < hysteresis) {
+            log.warn("[KILL-SWITCH] Drawdown {}% ≥ {}% nhưng mới {} / {} tick liên tiếp - chờ thêm",
+                    String.format("%.2f", drawdown * 100),
+                    String.format("%.2f", threshold * 100),
+                    state.killSwitchTriggerCount, hysteresis);
+            return Optional.empty();
+        }
+
+        log.error("=== KILL-SWITCH (sau {} tick liên tiếp drawdown ≥ ngưỡng) ===", hysteresis);
         log.error("unrealizedPnl={} USDT bookNotional={} v0={} drawdown={}% > ngưỡng {}% → BÁN HẾT, pause {}h",
                 String.format("%.4f", unrealizedPnl),
                 String.format("%.4f", bookNotional),
                 String.format("%.2f", state.v0),
                 String.format("%.2f", drawdown * 100),
-                String.format("%.2f", config.risk().dailyDrawdownPct() * 100),
+                String.format("%.2f", threshold * 100),
                 config.risk().pauseHours());
+        state.killSwitchTriggerCount = 0;
         List<Decision> all = new ArrayList<>();
         for (Position p : state.positions.values()) {
             all.add(new Decision.KillSwitchSellAll(p.symbol, p.qty,
@@ -244,11 +306,11 @@ public final class StrategyCoordinator {
         return Optional.of(all);
     }
 
-    private Map<String, BigDecimal> fetchPrices(BotState state, AppConfig config) {
+    private Map<String, BigDecimal> fetchPrices(BotState state, AppConfig config, boolean entriesNeeded) {
         Map<String, BigDecimal> map = new HashMap<>();
         Set<String> wanted = new HashSet<>();
         wanted.addAll(state.positions.keySet());
-        wanted.addAll(config.watchlist().symbols());
+        if (entriesNeeded) wanted.addAll(config.watchlist().symbols());
         for (String symbol : wanted) {
             try { map.put(symbol, client.latestPrice(symbol)); }
             catch (Exception e) { log.warn("Fetch price {} lỗi: {}", symbol, e.getMessage()); }
