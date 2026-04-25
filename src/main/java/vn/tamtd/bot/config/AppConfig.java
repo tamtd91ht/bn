@@ -73,7 +73,9 @@ public record AppConfig(
                 e.maxDropChecks() != null ? e.maxDropChecks() : exit.maxDropChecks(),
                 e.recoveryResetPct() != null ? e.recoveryResetPct() : exit.recoveryResetPct(),
                 e.breakevenAfterPartialTp() != null ? e.breakevenAfterPartialTp() : exit.breakevenAfterPartialTp(),
-                e.cooldownAfterLossHours() != null ? e.cooldownAfterLossHours() : exit.cooldownAfterLossHours()
+                e.cooldownAfterLossHours() != null ? e.cooldownAfterLossHours() : exit.cooldownAfterLossHours(),
+                e.trailingArmPct() != null ? e.trailingArmPct() : exit.trailingArmPct(),
+                e.trailingDropPct() != null ? e.trailingDropPct() : exit.trailingDropPct()
         );
     }
 
@@ -168,8 +170,13 @@ public record AppConfig(
             int rsiOversoldEnter,
             int rsiOversoldExit,
             double sidewayEmaGapPct,
-            int slopeConfirmBars
-    ) {}
+            int slopeConfirmBars,
+            /** STRONG_WAVE 4h: nếu RSI 4h hiện tại > X → reject (tránh catch đỉnh sóng).
+             *  null/0 = tắt filter. Khuyến nghị 70 (overbought zone). */
+            Integer strongWaveRsiMax
+    ) {
+        public int strongWaveRsiMaxV() { return strongWaveRsiMax == null ? 0 : strongWaveRsiMax; }
+    }
 
     /** Tham số exit - có thể override per-symbol qua {@link SymbolOverride#exit()}. */
     public record Exit(
@@ -180,7 +187,13 @@ public record AppConfig(
             Integer maxDropChecks,
             Double recoveryResetPct,
             Boolean breakevenAfterPartialTp,
-            Integer cooldownAfterLossHours
+            Integer cooldownAfterLossHours,
+            /** Trailing high-water TP: khi pnl% từng đạt ≥ trailingArmPct, enable trailing.
+             *  Nếu drop từ đỉnh ≥ trailingDropPct → bán toàn bộ ngay (TP_FULL).
+             *  Mục đích: bảo vệ lãi đã đạt được khi chưa hit takeProfitPct.
+             *  null/0 = tắt trailing. */
+            Double trailingArmPct,
+            Double trailingDropPct
     ) {
         // Helpers unbox với null-check cho các chỗ code cần primitive
         public double takeProfitPctV()       { return takeProfitPct; }
@@ -191,6 +204,9 @@ public record AppConfig(
         public double recoveryResetPctV()    { return recoveryResetPct; }
         public boolean breakevenAfterPartialTpV() { return breakevenAfterPartialTp; }
         public int    cooldownAfterLossHoursV() { return cooldownAfterLossHours; }
+        public double trailingArmPctV()      { return trailingArmPct == null ? 0.0 : trailingArmPct; }
+        public double trailingDropPctV()     { return trailingDropPct == null ? 0.0 : trailingDropPct; }
+        public boolean trailingEnabled()     { return trailingArmPctV() > 0 && trailingDropPctV() > 0; }
     }
 
     public record Capital(

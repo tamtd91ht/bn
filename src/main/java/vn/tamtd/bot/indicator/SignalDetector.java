@@ -90,7 +90,8 @@ public final class SignalDetector {
     public boolean isStrongWave(BarSeries s4h) {
         AppConfig.Signals sig = configRegistry.current().signals();
         int emaShort = sig.emaShort();
-        if (s4h.getBarCount() < 20) return false;
+        int rsiPeriod = sig.rsiPeriod();
+        if (s4h.getBarCount() < Math.max(20, rsiPeriod + 3)) return false;
         int last = s4h.getEndIndex();
         ClosePriceIndicator close = new ClosePriceIndicator(s4h);
         EMAIndicator ema = new EMAIndicator(close, emaShort);
@@ -104,6 +105,20 @@ public final class SignalDetector {
         boolean bigPump = pctChange > 5.0;
         boolean aboveEma = c1 > ema.getValue(last).doubleValue();
         boolean volSpike = vol.getValue(last).doubleValue() > volSma.getValue(last).doubleValue() * 2;
-        return bigPump && aboveEma && volSpike;
+        if (!(bigPump && aboveEma && volSpike)) return false;
+
+        // Filter: tránh catch đỉnh sóng. Nếu RSI 4h đã quá overbought → reject.
+        // Logic: pump > 5% trong 1 nến 4h thường đẩy RSI vọt qua 70 - đây thường
+        // là điểm cuối của xu hướng tăng, sau đó pullback. APE 24/04: pump xong
+        // bot mua đỉnh → -7.15%. Filter này tránh exact pattern đó.
+        int rsiMax = sig.strongWaveRsiMaxV();
+        if (rsiMax > 0) {
+            RSIIndicator rsi = new RSIIndicator(close, rsiPeriod);
+            double rsi4h = rsi.getValue(last).doubleValue();
+            if (rsi4h > rsiMax) {
+                return false;
+            }
+        }
+        return true;
     }
 }

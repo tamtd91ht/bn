@@ -47,6 +47,9 @@ signals:
   sidewayEmaGapPct: 0.3
   # Số nến gần nhất để confirm slope EMA20 (regression).
   slopeConfirmBars: 3
+  # STRONG_WAVE 4h: nếu RSI 4h hiện tại > X → reject (tránh mua đỉnh sóng).
+  # 70 = overbought zone, 65 chặt hơn, 0 = tắt filter.
+  strongWaveRsiMax: 70
 
 # ========= EXIT (TP/SL) =========
 # Có thể override per-symbol qua symbols.yml (vd coin biến động cao muốn TP/SL xa hơn).
@@ -59,6 +62,12 @@ exit:
   recoveryResetPct: -2.0           # Hồi về > ngưỡng này → reset dropCheckCount (match với SL mới)
   breakevenAfterPartialTp: true    # Sau partial TP dời SL về breakeven
   cooldownAfterLossHours: 4        # Sau stop-loss không mua lại coin đó trong N giờ
+  # --- TRAILING TP (high-water mark) ---
+  # Bảo vệ lãi đã đạt khi pnl tụt khỏi đỉnh - tránh case "lên 4% rồi rơi về 0".
+  # Logic: pnl từng đạt ≥ trailingArmPct (armed) AND drop từ đỉnh ≥ trailingDropPct → bán ngay.
+  trailingArmPct: 2.0              # Lãi từ 2% trở lên mới enable trailing
+  trailingDropPct: 1.0             # Tụt ≥ 1% khỏi đỉnh → SELL toàn bộ
+                                   # Cả 2 = 0 hoặc null → tắt trailing.
 
 # ========= CAPITAL =========
 capital:

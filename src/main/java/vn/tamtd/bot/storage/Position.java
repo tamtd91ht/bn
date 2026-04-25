@@ -31,6 +31,10 @@ public final class Position {
     public double currentTpPct;
     public double currentSlPct;
 
+    /** Đỉnh pnl% từng đạt được trong life của position. Dùng cho trailing TP (high-water mark).
+     *  Init 0; mỗi evaluate, update nếu pnl hiện tại > giá trị cũ. */
+    public double pnlPctMax;
+
     // ======== FUTURES-ONLY (null nếu spot) ========
 
     /** "LONG" | "SHORT" | null (spot = null ~ LONG). */
@@ -94,6 +98,7 @@ public final class Position {
         p.tpLevelsHit = 0;
         p.currentTpPct = tpPct;
         p.currentSlPct = slPct;
+        p.pnlPctMax = 0.0;
         return p;
     }
 

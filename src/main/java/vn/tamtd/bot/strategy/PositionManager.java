@@ -47,11 +47,33 @@ public final class PositionManager {
         AppConfig.Exit exit = cfg.exitFor(position.symbol);
         double pnlPct = computePnlPct(position, currentPrice);
 
+        // Track high-water mark cho trailing TP. Update LUÔN LUÔN mỗi evaluate.
+        if (pnlPct > position.pnlPctMax) {
+            position.pnlPctMax = pnlPct;
+        }
+
         // Reset dropCheckCount nếu đã hồi qua recoveryResetPct
         if (pnlPct > exit.recoveryResetPctV() && position.dropCheckCount > 0) {
             log.info("[POS] {} pnl={}% hồi qua ngưỡng recovery, reset dropCheckCount từ {} về 0",
                     position.symbol, fmt(pnlPct), position.dropCheckCount);
             position.dropCheckCount = 0;
+        }
+
+        // Trailing TP: pnl từng đạt ≥ armPct AND drop từ đỉnh ≥ dropPct → TP_FULL ngay.
+        // Check TRƯỚC TP threshold thường để bảo vệ lãi đã đạt khi chưa hit takeProfitPct.
+        if (exit.trailingEnabled() && position.pnlPctMax >= exit.trailingArmPctV()) {
+            double drop = position.pnlPctMax - pnlPct;
+            if (drop >= exit.trailingDropPctV() && pnlPct > 0) {
+                String reason = String.format(
+                        "Trailing TP: đỉnh pnl=%.2f%%, hiện %.2f%%, tụt %.2f%% ≥ ngưỡng %.2f%% → chốt full",
+                        position.pnlPctMax, pnlPct, drop, exit.trailingDropPctV());
+                log.info("[POS:TP_TRAILING] {} pnlMax={}% cur={}% drop={}% ≥ {}% → SELL ALL qty={}",
+                        position.symbol, fmt(position.pnlPctMax), fmt(pnlPct),
+                        fmt(drop), fmt(exit.trailingDropPctV()),
+                        position.qty.toPlainString());
+                return Optional.of(new Decision.TakeProfitFull(
+                        position.symbol, position.qty, reason));
+            }
         }
 
         if (pnlPct >= position.currentTpPct) {
