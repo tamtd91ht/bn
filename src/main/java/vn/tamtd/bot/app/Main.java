@@ -10,6 +10,7 @@ import picocli.CommandLine;
  *   java -jar bot.jar close-all        # emergency close
  *   java -jar bot.jar account          # verify API key + balance
  *   java -jar bot.jar scan-once        # 1 vòng phân tích, không đặt lệnh
+ *   java -jar bot.jar report --period day|week|month   # báo cáo PnL ad-hoc
  * </pre>
  */
 @CommandLine.Command(
@@ -22,7 +23,8 @@ import picocli.CommandLine;
                 AccountCommand.class,
                 ListSymbolsCommand.class,
                 CloseAllCommand.class,
-                ScanOnceCommand.class
+                ScanOnceCommand.class,
+                ReportCommand.class
         }
 )
 public final class Main implements Runnable {

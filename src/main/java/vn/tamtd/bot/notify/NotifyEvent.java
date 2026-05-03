@@ -19,6 +19,8 @@ public enum NotifyEvent {
     CONFIG_RELOADED,
     ERROR,
     DAILY_REPORT,
+    WEEKLY_REPORT,
+    MONTHLY_REPORT,
     APP_START,
     APP_STOP
 }

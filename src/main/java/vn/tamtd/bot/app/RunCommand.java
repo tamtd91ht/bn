@@ -25,6 +25,8 @@ import vn.tamtd.bot.notify.NotifyEvent;
 import vn.tamtd.bot.notify.TelegramNotifier;
 import vn.tamtd.bot.paper.PaperAccount;
 import vn.tamtd.bot.paper.PaperOrderGateway;
+import vn.tamtd.bot.report.ReportGenerator;
+import vn.tamtd.bot.report.ReportScheduler;
 import vn.tamtd.bot.scanner.UniverseScanner;
 import vn.tamtd.bot.storage.BotState;
 import vn.tamtd.bot.storage.CleanupJob;
@@ -174,6 +176,11 @@ public final class RunCommand implements Callable<Integer> {
                 registry, state, stateStore, exchangeClient, orderExecutor);
         tgController.start();
 
+        // Báo cáo daily/weekly/monthly @ dailyReportHourVN
+        ReportGenerator reportGenerator = new ReportGenerator(dataDir);
+        ReportScheduler reportScheduler = new ReportScheduler(registry, reportGenerator, notifier);
+        reportScheduler.start();
+
         // Scheduler tick chính (FULL: positions + scanner + entry)
         ScheduledExecutorService tickScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "tick-loop");
@@ -230,6 +237,7 @@ public final class RunCommand implements Callable<Integer> {
             }
             tgController.stop();
             fileWatcher.stop();
+            reportScheduler.stop();
             tickScheduler.shutdownNow();
             if (fastTickSchedulerFinal != null) fastTickSchedulerFinal.shutdownNow();
             timeSync.stop();

@@ -106,6 +106,8 @@ public final class TelegramNotifier implements Notifier {
             case CONFIG_RELOADED -> "[CONFIG]";
             case ERROR -> "[ERROR]";
             case DAILY_REPORT -> "[DAILY]";
+            case WEEKLY_REPORT -> "[WEEKLY]";
+            case MONTHLY_REPORT -> "[MONTHLY]";
             case APP_START -> "[START]";
             case APP_STOP -> "[STOP]";
         };
