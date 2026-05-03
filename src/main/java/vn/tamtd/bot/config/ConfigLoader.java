@@ -60,6 +60,7 @@ public final class ConfigLoader {
                 parsed.logging(),
                 parsed.telegram(),
                 parsed.recovery(),
+                parsed.paperTrade(),
                 syms.isEmpty() ? parsed.symbols() : syms,
                 secrets
         );
@@ -87,6 +88,7 @@ public final class ConfigLoader {
                 parsed.capital(), parsed.risk(), parsed.watchlist(), parsed.scanner(),
                 parsed.timeframes(), parsed.scheduling(), parsed.storage(),
                 parsed.logging(), parsed.telegram(), parsed.recovery(),
+                parsed.paperTrade(),
                 parsed.symbols() == null ? Map.of() : parsed.symbols(),
                 secrets);
         merged.validate();

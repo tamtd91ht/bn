@@ -35,6 +35,8 @@ public record AppConfig(
         Telegram telegram,
         /** Recovery/rehydrate settings - khôi phục position từ ví khi state file trống. Optional. */
         Recovery recovery,
+        /** Paper-trade (dry-run): mô phỏng lệnh mua/bán bằng số dư ảo, không gọi API trade thật. */
+        PaperTrade paperTrade,
         /** Per-symbol override. Key = symbol (VD "DOGEUSDT"). */
         Map<String, SymbolOverride> symbols,
         /** Secrets không có trong YAML - đọc từ env var + secrets.properties. */
@@ -45,6 +47,7 @@ public record AppConfig(
         // Defensive: chuẩn hoá các null collection về empty để tránh NPE downstream
         if (symbols == null) symbols = Map.of();
         if (recovery == null) recovery = Recovery.defaults();
+        if (paperTrade == null) paperTrade = PaperTrade.defaults();
     }
 
     /** Shortcut tiện dùng ở strategy/order code. */
@@ -123,14 +126,19 @@ public record AppConfig(
             fail("signals.emaShort < signals.emaLong");
     }
 
-    /** Validate thêm các trường cần khi chạy live (API key, secrets). */
+    /** Validate thêm các trường cần khi chạy live (API key, secrets).
+     *  Paper-trade mode: API key vẫn nên có để gọi rawAccount lúc init (dù không bắt buộc),
+     *  nhưng nếu thiếu sẽ chỉ warn chứ không throw. */
     public void validateSecretsForTrading() {
-        if (secrets == null || isBlank(secrets.binanceApiKey()))
-            fail("Env BINANCE_API_KEY chưa được set");
-        if (isBlank(secrets.binanceApiSecret()))
-            fail("Env BINANCE_API_SECRET chưa được set");
+        boolean paper = paperTrade != null && paperTrade.enabledV();
+        if (!paper) {
+            if (secrets == null || isBlank(secrets.binanceApiKey()))
+                fail("Env BINANCE_API_KEY chưa được set");
+            if (isBlank(secrets.binanceApiSecret()))
+                fail("Env BINANCE_API_SECRET chưa được set");
+        }
         if (telegram != null && telegram.enabled()) {
-            if (isBlank(secrets.telegramBotToken()))
+            if (secrets == null || isBlank(secrets.telegramBotToken()))
                 fail("telegram.enabled=true nhưng TELEGRAM_BOT_TOKEN chưa set");
             if (isBlank(secrets.telegramChatId()))
                 fail("telegram.enabled=true nhưng TELEGRAM_CHAT_ID chưa set");
@@ -328,6 +336,42 @@ public record AppConfig(
         public boolean rehydrateOnStartV() { return rehydrateOnStart; }
         public double minAssetValueUsdtV() { return minAssetValueUsdt; }
         public boolean onlyWhenStateEmptyV() { return onlyWhenStateEmpty; }
+    }
+
+    /**
+     * Paper-trade mode: bot mô phỏng lệnh mua/bán bằng số dư ảo (file paper_account.json),
+     * KHÔNG gọi endpoint trade thật của Binance. Vẫn dùng giá real-time từ public endpoint
+     * để fill lệnh ảo và đánh giá hiệu quả chiến lược.
+     *
+     * <p>Khi {@code enabled=true}:
+     * <ul>
+     *   <li>{@link vn.tamtd.bot.exchange.OrderGateway} thay bằng PaperOrderGateway.</li>
+     *   <li>{@link Secrets} không bắt buộc (public endpoint không cần API key).</li>
+     *   <li>v0/reserveFund/freeUsdt đều tính theo paper account, không phải ví thật.</li>
+     * </ul>
+     */
+    public record PaperTrade(
+            Boolean enabled,
+            /** Số USDT khởi tạo cho paper account khi file paper_account.json chưa tồn tại. */
+            Double initialUsdtBalance,
+            /** Phí giả lập mỗi lệnh (Spot taker mặc định 0.1% = 0.001). */
+            Double feeRate,
+            /** Slippage giả lập (% so giá ticker). Buy ăn cao hơn, sell ăn thấp hơn. */
+            Double slippagePct
+    ) {
+        public static PaperTrade defaults() {
+            return new PaperTrade(false, 100.0, 0.001, 0.05);
+        }
+        public PaperTrade {
+            if (enabled == null) enabled = false;
+            if (initialUsdtBalance == null) initialUsdtBalance = 100.0;
+            if (feeRate == null) feeRate = 0.001;
+            if (slippagePct == null) slippagePct = 0.05;
+        }
+        public boolean enabledV() { return enabled; }
+        public double initialUsdtBalanceV() { return initialUsdtBalance; }
+        public double feeRateV() { return feeRate; }
+        public double slippagePctV() { return slippagePct; }
     }
 
     /** Override config cho 1 symbol cụ thể. Tất cả field tuỳ chọn (null = không override). */

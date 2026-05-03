@@ -23,6 +23,8 @@ import vn.tamtd.bot.notify.NoOpNotifier;
 import vn.tamtd.bot.notify.Notifier;
 import vn.tamtd.bot.notify.NotifyEvent;
 import vn.tamtd.bot.notify.TelegramNotifier;
+import vn.tamtd.bot.paper.PaperAccount;
+import vn.tamtd.bot.paper.PaperOrderGateway;
 import vn.tamtd.bot.scanner.UniverseScanner;
 import vn.tamtd.bot.storage.BotState;
 import vn.tamtd.bot.storage.CleanupJob;
@@ -72,10 +74,13 @@ public final class RunCommand implements Callable<Integer> {
         ConfigRegistry registry = ConfigRegistry.bootstrap(baseDir);
         AppConfig config = registry.current();
         config.validateSecretsForTrading();
-        log.info("Mode: {}, leverage={}, testnet: {}, watchlist: {}",
+        boolean paperMode = config.paperTrade() != null && config.paperTrade().enabledV();
+        log.info("Mode: {}, leverage={}, testnet: {}, paperTrade: {}, watchlist: {}",
                 config.exchange().mode(), config.exchange().leverage(),
-                config.exchange().useTestnet(), config.watchlist().symbols());
-        if (!config.exchange().useTestnet()) {
+                config.exchange().useTestnet(), paperMode, config.watchlist().symbols());
+        if (paperMode) {
+            log.warn("!!! PAPER-TRADE mode - bot CHỈ ghi log/JSONL, KHÔNG đặt lệnh thật !!!");
+        } else if (!config.exchange().useTestnet()) {
             log.warn("!!! LIVE trading mode - bot sẽ đặt lệnh bằng vốn thực !!!");
         }
 
@@ -100,6 +105,17 @@ public final class RunCommand implements Callable<Integer> {
         log.info("State loaded: v0={}, reserveFund={}, positions={}, killedUntil={}, paused={}",
                 state.v0, state.reserveFund, state.positions.keySet(), state.killedUntil, state.paused);
 
+        // Paper-trade: tạo PaperAccount + thay OrderGateway bằng PaperOrderGateway.
+        // Phải khởi tạo SAU filterCache (gateway cần filter) và TRƯỚC capitalInitializer.
+        PaperAccount paperAccount = null;
+        if (paperMode) {
+            paperAccount = new PaperAccount(dataDir, config.paperTrade().initialUsdtBalanceV());
+            gateway = new PaperOrderGateway(registry, exchangeClient, filterCache, paperAccount);
+            if (config.mode().isFutures()) {
+                log.warn("Paper-trade hiện chỉ hỗ trợ Spot - bot sẽ chạy Futures live mode!");
+            }
+        }
+
         JsonlWriter jsonlWriter = new JsonlWriter(dataDir);
         CleanupJob cleanupJob = new CleanupJob(
                 dataDir,
@@ -117,7 +133,7 @@ public final class RunCommand implements Callable<Integer> {
         FundingRateGuard fundingGuard = new FundingRateGuard(registry, exchangeClient, notifier);
         LiquidationGuard liquidationGuard = new LiquidationGuard(registry, notifier);
 
-        CapitalInitializer capitalInitializer = new CapitalInitializer(registry, exchangeClient);
+        CapitalInitializer capitalInitializer = new CapitalInitializer(registry, exchangeClient, paperAccount);
         AccountCache accountCache = new AccountCache(capitalInitializer);
 
         // Rehydrate (opt-in): nếu state trống mà ví có coin → tạo Position với

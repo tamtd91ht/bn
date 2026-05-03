@@ -8,6 +8,7 @@ import vn.tamtd.bot.config.AppConfig;
 import vn.tamtd.bot.config.ConfigRegistry;
 import vn.tamtd.bot.config.ExchangeMode;
 import vn.tamtd.bot.exchange.ExchangeClient;
+import vn.tamtd.bot.paper.PaperAccount;
 import vn.tamtd.bot.storage.BotState;
 
 import java.math.BigDecimal;
@@ -35,10 +36,18 @@ public final class CapitalInitializer {
 
     private final ConfigRegistry configRegistry;
     private final ExchangeClient client;
+    /** Optional. Set khi paper-trade enabled → snapshot trả số dư ảo, không hỏi Binance. */
+    private final PaperAccount paperAccount;
 
     public CapitalInitializer(ConfigRegistry configRegistry, ExchangeClient client) {
+        this(configRegistry, client, null);
+    }
+
+    public CapitalInitializer(ConfigRegistry configRegistry, ExchangeClient client,
+                              PaperAccount paperAccount) {
         this.configRegistry = configRegistry;
         this.client = client;
+        this.paperAccount = paperAccount;
     }
 
     public boolean snapshotIfNeeded(BotState state) {
@@ -92,8 +101,43 @@ public final class CapitalInitializer {
     }
 
     public AccountSnapshot fetchAccountSnapshot() throws Exception {
-        ExchangeMode mode = configRegistry.current().mode();
+        AppConfig cfg = configRegistry.current();
+        if (cfg.paperTrade() != null && cfg.paperTrade().enabledV() && paperAccount != null) {
+            return fetchPaperSnapshot();
+        }
+        ExchangeMode mode = cfg.mode();
         return mode.isFutures() ? fetchFuturesSnapshot() : fetchSpotSnapshot();
+    }
+
+    private AccountSnapshot fetchPaperSnapshot() {
+        double total = 0.0;
+        List<AssetHolding> holdings = new ArrayList<>();
+        for (var e : paperAccount.snapshot().entrySet()) {
+            String asset = e.getKey();
+            double amount = e.getValue().doubleValue();
+            if (amount == 0) continue;
+            if ("USDT".equals(asset) || isStablecoin(asset)) {
+                total += amount;
+                holdings.add(new AssetHolding(asset, amount, 0, amount, amount,
+                        "USDT".equals(asset) ? AssetSource.NATIVE : AssetSource.STABLE, null));
+                continue;
+            }
+            String symbol = asset + "USDT";
+            try {
+                BigDecimal price = client.latestPrice(symbol);
+                double value = new BigDecimal(amount).multiply(price)
+                        .setScale(8, RoundingMode.HALF_UP).doubleValue();
+                total += value;
+                holdings.add(new AssetHolding(asset, amount, 0, amount, value,
+                        AssetSource.PRICED, price));
+            } catch (Exception ex) {
+                holdings.add(new AssetHolding(asset, amount, 0, amount, 0.0,
+                        AssetSource.SKIPPED, null));
+            }
+        }
+        log.info("[CAPITAL:PAPER] equity={} USDT từ {} asset (paper account)",
+                String.format("%.4f", total), holdings.size());
+        return new AccountSnapshot(total, List.copyOf(holdings));
     }
 
     private AccountSnapshot fetchSpotSnapshot() throws Exception {

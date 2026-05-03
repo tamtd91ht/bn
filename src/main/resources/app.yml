@@ -164,6 +164,19 @@ telegram:
     - APP_START
     - APP_STOP
 
+# ========= PAPER-TRADE (DRY-RUN) =========
+# Khi enabled=true: bot KHÔNG gọi endpoint trade thật của Binance. Mua/bán được giả lập
+# trên số dư ảo lưu ở data/paper_account.json. Giá fill lấy real-time từ ticker public,
+# áp slippage + fee để mô phỏng. Vẫn ghi log/JSONL/Telegram bình thường để đánh giá hiệu quả.
+#
+# Mục đích: chạy thử chiến lược một thời gian xem có lợi nhuận trước khi đưa vào trade thật.
+# Khi muốn đổi về live: đặt enabled=false, xoá data/paper_account.json (tuỳ ý), restart.
+paperTrade:
+  enabled: true                          # true = paper-trade (mặc định để đánh giá), false = trade thật
+  initialUsdtBalance: 100.0              # Vốn ảo USDT khi tạo paper account lần đầu
+  feeRate: 0.001                         # Phí mỗi lệnh (0.1% = Spot taker fee chuẩn của Binance)
+  slippagePct: 0.05                      # Slippage giả lập (% so ticker). Buy ăn cao hơn, sell thấp hơn.
+
 # ========= RECOVERY / REHYDRATE =========
 # Khi bật + state.json trống (user xoá ./data) + ví có coin → bot tạo Position
 # với entryPrice = giá hiện tại lúc start ("coi như mua lại"). TP/SL/trailing sẽ
