@@ -39,7 +39,7 @@ signals:
   rsiPeriod: 14
   # Watchlist entry: chỉ mua khi RSI ∈ [rsiEntryMin, rsiEntryMax] (tránh đỉnh/trend yếu).
   rsiEntryMin: 40
-  rsiEntryMax: 65
+  rsiEntryMax: 60                       # cũ 65 — siết để tránh mua khi RSI đã gần overbought (paper 9 ngày: nhiều entry pullback ngay)
   # Bottom reversal: RSI phải từng < rsiOversoldEnter rồi hồi qua rsiOversoldExit.
   rsiOversoldEnter: 30
   rsiOversoldExit: 35
@@ -49,7 +49,7 @@ signals:
   slopeConfirmBars: 3
   # STRONG_WAVE 4h: nếu RSI 4h hiện tại > X → reject (tránh mua đỉnh sóng).
   # 70 = overbought zone, 65 chặt hơn, 0 = tắt filter.
-  strongWaveRsiMax: 70
+  strongWaveRsiMax: 62                  # cũ 70 — siết mạnh để tránh bắt đỉnh sóng (paper test: STRONG_WAVE pullback nhiều)
 
 # ========= EXIT (TP/SL) =========
 # Có thể override per-symbol qua symbols.yml (vd coin biến động cao muốn TP/SL xa hơn).
@@ -61,12 +61,12 @@ exit:
   maxDropChecks: 1                 # Dính SL là bán ngay, KHÔNG chờ tick sau. Altcoin cascade dump → cắt quyết liệt.
   recoveryResetPct: -2.0           # Hồi về > ngưỡng này → reset dropCheckCount (match với SL mới)
   breakevenAfterPartialTp: true    # Sau partial TP dời SL về breakeven
-  cooldownAfterLossHours: 4        # Sau stop-loss không mua lại coin đó trong N giờ
+  cooldownAfterLossHours: 24       # Sau stop-loss không mua lại coin đó trong N giờ. Cũ 4h quá ngắn → tái nhập coin vừa thua trong cùng phiên.
   # --- TRAILING TP (high-water mark) ---
   # Bảo vệ lãi đã đạt khi pnl tụt khỏi đỉnh - tránh case "lên 4% rồi rơi về 0".
   # Logic: pnl từng đạt ≥ trailingArmPct (armed) AND drop từ đỉnh ≥ trailingDropPct → bán ngay.
-  trailingArmPct: 2.0              # Lãi từ 2% trở lên mới enable trailing
-  trailingDropPct: 1.0             # Tụt ≥ 1% khỏi đỉnh → SELL toàn bộ
+  trailingArmPct: 3.0              # Lãi từ 3% trở lên mới enable trailing (cũ 2.0 — paper test: cả 3 winner exit < 2% vì arm quá thấp)
+  trailingDropPct: 1.5             # Tụt ≥ 1.5% khỏi đỉnh → SELL toàn bộ (cũ 1.0 — quá chặt, bị wick đẩy ra)
                                    # Cả 2 = 0 hoặc null → tắt trailing.
 
 # ========= CAPITAL =========
@@ -80,8 +80,9 @@ capital:
 risk:
   dailyDrawdownPct: 0.10               # Equity giảm > 10% trong ngày → kill-switch. Altcoin biến động mạnh, 5% quá chặt dễ false-trigger.
   pauseHours: 24                       # Kill-switch pause trong N giờ
-  maxConcurrentPositions: 3            # Với vốn ~38 USDT + minTradeSize=10 + reservePct=20% → chỉ đủ 3 lệnh đồng thời
-  maxPnlPctEligibleForRebalance: 2.0   # Coin có pnl < X% + trend không tăng → có thể rebalance bán
+  maxConcurrentPositions: 2            # Cũ 3 — với vốn 200 USDT vẫn giữ 2 lệnh đồng thời để có reserveFund đệm cho high-score signal (paper test bỏ lỡ ALLOUSDT 23.59, SUI 23.42 do hết fund).
+  maxPnlPctEligibleForRebalance: -100  # TẮT rebalance (đặt ngưỡng âm sâu để không position nào lọt). Paper 9 ngày: rebalance lock loss 6/6 lần = -3.82 USDT (93% realized loss). Tôn trọng SL=-4% thay vì đổi coin lock loss sớm.
+  rebalanceMinHoldMinutes: 120         # Không rebalance position giữ < 2h (tránh churn mua-bán-mua)
   # --- FUTURES ONLY ---
   liquidationBufferPct: 30             # Lỗ max cho phép = 30% khoảng cách (entry → liqPrice)
   maxExposurePctOfEquity: 80           # Tổng notional mở <= 80% equity (tránh overleverage)
@@ -176,7 +177,7 @@ telegram:
 # Khi muốn đổi về live: đặt enabled=false, xoá data/paper_account.json (tuỳ ý), restart.
 paperTrade:
   enabled: true                          # true = paper-trade (mặc định để đánh giá), false = trade thật
-  initialUsdtBalance: 100.0              # Vốn ảo USDT khi tạo paper account lần đầu
+  initialUsdtBalance: 200.0              # Vốn ảo USDT khi tạo paper account lần đầu (cũ 100 — nâng để có dư địa giữ 2 lệnh đồng thời + reserveFund đệm)
   feeRate: 0.001                         # Phí mỗi lệnh (0.1% = Spot taker fee chuẩn của Binance)
   slippagePct: 0.05                      # Slippage giả lập (% so ticker). Buy ăn cao hơn, sell thấp hơn.
 
