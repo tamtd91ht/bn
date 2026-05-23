@@ -113,6 +113,7 @@ scanner:
     - TUSDUSDT
     - USD1USDT
     - RLUSDUSDT
+    - EURUSDT       # Cặp ngoại hối EUR/USD, biến động <0.5%/ngày — không hợp altcoin strategy TP 5%/SL 4%
 
 # ========= TIMEFRAMES =========
 timeframes:
