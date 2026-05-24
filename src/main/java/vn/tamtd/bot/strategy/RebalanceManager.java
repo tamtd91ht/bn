@@ -12,6 +12,8 @@ import vn.tamtd.bot.storage.Position;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -41,10 +43,11 @@ public final class RebalanceManager {
 
         AppConfig config = configRegistry.current();
         double maxPnlEligible = config.risk().maxPnlPctEligibleForRebalance();
+        int minHoldMinutes = config.risk().rebalanceMinHoldMinutesV();
         String tfPrimary = config.timeframes().primary();
 
         List<Candidate> candidates = state.positions.values().stream()
-                .map(p -> toCandidate(p, currentPrices, tfPrimary, maxPnlEligible))
+                .map(p -> toCandidate(p, currentPrices, tfPrimary, maxPnlEligible, minHoldMinutes))
                 .filter(Optional::isPresent)
                 .map(Optional::get)
                 .sorted(Comparator.comparingDouble(Candidate::pnlPct))
@@ -63,7 +66,13 @@ public final class RebalanceManager {
     private Optional<Candidate> toCandidate(Position p,
                                             Map<String, BigDecimal> prices,
                                             String tfPrimary,
-                                            double maxPnlEligible) {
+                                            double maxPnlEligible,
+                                            int minHoldMinutes) {
+        if (p.entryAt != null) {
+            long heldMinutes = Duration.between(p.entryAt, Instant.now()).toMinutes();
+            if (heldMinutes < minHoldMinutes) return Optional.empty();
+        }
+
         BigDecimal price = prices.get(p.symbol);
         if (price == null) return Optional.empty();
         BigDecimal diff = p.isLong()
@@ -78,10 +87,10 @@ public final class RebalanceManager {
         try {
             BarSeries s = barSeriesCache.get(p.symbol, tfPrimary);
             TrendIndicators.Trend trend = trendIndicators.classify(s);
-            boolean favorable = p.isLong()
-                    ? trend == TrendIndicators.Trend.UPTREND
-                    : trend == TrendIndicators.Trend.DOWNTREND;
-            if (favorable) return Optional.empty();
+            boolean unfavorable = p.isLong()
+                    ? trend == TrendIndicators.Trend.DOWNTREND
+                    : trend == TrendIndicators.Trend.UPTREND;
+            if (!unfavorable) return Optional.empty();
         } catch (Exception e) {
             return Optional.empty();
         }

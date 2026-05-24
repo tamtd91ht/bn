@@ -229,6 +229,7 @@ public record AppConfig(
             int pauseHours,
             int maxConcurrentPositions,
             double maxPnlPctEligibleForRebalance,
+            Integer rebalanceMinHoldMinutes,
             /** Futures only: khoảng cách tối thiểu (% từ entry) đến liquidationPrice. */
             double liquidationBufferPct,
             /** Futures only: tổng notional mở tối đa (% equity). */
@@ -241,8 +242,10 @@ public record AppConfig(
     ) {
         public Risk {
             if (killSwitchHysteresisTicks == null) killSwitchHysteresisTicks = 1;
+            if (rebalanceMinHoldMinutes == null) rebalanceMinHoldMinutes = 120;
         }
         public int killSwitchHysteresisTicksV() { return killSwitchHysteresisTicks; }
+        public int rebalanceMinHoldMinutesV() { return rebalanceMinHoldMinutes; }
     }
 
     public record Watchlist(

@@ -337,7 +337,7 @@ public final class OrderExecutor {
 
         if (fullyClosed) {
             state.positions.remove(symbol);
-            if ("STOP_LOSS".equals(type) || "KILL_SWITCH".equals(type)) {
+            if ("STOP_LOSS".equals(type) || "KILL_SWITCH".equals(type) || "REBALANCE".equals(type)) {
                 Instant until = Instant.now().plusSeconds(
                         (long) config.exitFor(symbol).cooldownAfterLossHoursV() * 3600);
                 state.cooldowns.put(symbol, until);
