@@ -36,4 +36,8 @@ public sealed interface Decision {
     /** Kill-switch: bán tất cả vị thế. */
     record KillSwitchSellAll(String symbol, BigDecimal qtyToSell, String reason)
             implements Decision {}
+
+    /** Đóng sớm vị thế standby để thu hồi vốn dự phòng (time-based recovery). */
+    record StandbyRecover(String symbol, BigDecimal qtyToSell, String reason)
+            implements Decision {}
 }

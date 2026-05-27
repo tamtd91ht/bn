@@ -75,12 +75,24 @@ capital:
   v0SnapshotEveryHours: 24             # Mỗi 24h snapshot lại v0 (chỉ khi không có position mở)
   minTradeSizeUsdt: 10.0               # Lệnh < số này sẽ bị skip (tránh phí cao)
   reserveAllocPerOpportunityUsdt: 50.0 # Trần mỗi lần rút reserveFund vào 1 coin scanner
+  # --- STANDBY FUND (quỹ cơ hội) ---
+  # % v0 luôn carve-out, KHÔNG deploy vào main slots, chỉ dùng khi main slots đầy.
+  # 0.0 = tắt tính năng standby. Khuyến nghị 0.15–0.20.
+  standbyReservePct: 0.20
+  # Score tối thiểu của scanner signal để trigger entry từ standby fund.
+  standbyMinScore: 15.5
+  # Tối đa N vị thế standby cùng lúc.
+  standbyMaxPositions: 2
+  # Sau N giờ, nếu PnL >= standbyMinRecoveryPnlPct → đóng sớm để thu hồi vốn.
+  standbyRecoveryHours: 4
+  # PnL% tối thiểu để time-based recovery kích hoạt. 0.0 = hòa vốn là đủ.
+  standbyMinRecoveryPnlPct: 0.0
 
 # ========= RISK =========
 risk:
   dailyDrawdownPct: 0.10               # Equity giảm > 10% trong ngày → kill-switch. Altcoin biến động mạnh, 5% quá chặt dễ false-trigger.
   pauseHours: 24                       # Kill-switch pause trong N giờ
-  maxConcurrentPositions: 2            # Cũ 3 — với vốn 200 USDT vẫn giữ 2 lệnh đồng thời để có reserveFund đệm cho high-score signal (paper test bỏ lỡ ALLOUSDT 23.59, SUI 23.42 do hết fund).
+  maxConcurrentPositions: 3            # 3 main slots + 1 standby = 4 vị thế tối đa. Main allocPerOp = (X×80%×0.98)/3, standby = X×20%×0.98.
   maxPnlPctEligibleForRebalance: -100  # TẮT rebalance (đặt ngưỡng âm sâu để không position nào lọt). Paper 9 ngày: rebalance lock loss 6/6 lần = -3.82 USDT (93% realized loss). Tôn trọng SL=-4% thay vì đổi coin lock loss sớm.
   rebalanceMinHoldMinutes: 120         # Không rebalance position giữ < 2h (tránh churn mua-bán-mua)
   # --- FUTURES ONLY ---
@@ -178,7 +190,7 @@ telegram:
 # Khi muốn đổi về live: đặt enabled=false, xoá data/paper_account.json (tuỳ ý), restart.
 paperTrade:
   enabled: true                          # true = paper-trade (mặc định để đánh giá), false = trade thật
-  initialUsdtBalance: 200.0              # Vốn ảo USDT khi tạo paper account lần đầu (cũ 100 — nâng để có dư địa giữ 2 lệnh đồng thời + reserveFund đệm)
+  initialUsdtBalance: 300.0              # Vốn ảo USDT khi tạo paper account lần đầu (cũ 100 — nâng để có dư địa giữ 2 lệnh đồng thời + reserveFund đệm)
   feeRate: 0.001                         # Phí mỗi lệnh (0.1% = Spot taker fee chuẩn của Binance)
   slippagePct: 0.05                      # Slippage giả lập (% so ticker). Buy ăn cao hơn, sell thấp hơn.
 

@@ -74,12 +74,30 @@ public final class CapitalInitializer {
             state.v0 = equity;
             state.reserveFund = reserve;
             state.v0SnapshotAt = Instant.now();
+
+            // Init standbyFund: chỉ reset khi không có vị thế STANDBY đang mở
+            // (tránh overwrite giá trị đang track vị thế standby chưa đóng)
+            if (config.capital().standbyEnabled()) {
+                long openStandby = state.positions.values().stream()
+                        .filter(p -> "STANDBY".equals(p.source)).count();
+                if (openStandby == 0) {
+                    state.standbyFund = equity * config.capital().standbyReservePctV();
+                    log.info("[CAPITAL] standbyFund={} ({}% of equity)",
+                            String.format("%.4f", state.standbyFund),
+                            String.format("%.1f", config.capital().standbyReservePctV() * 100));
+                } else {
+                    log.info("[CAPITAL] standbyFund giữ nguyên={} ({} vị thế standby đang mở)",
+                            String.format("%.4f", state.standbyFund), openStandby);
+                }
+            }
+
             double deltaPct = oldV0 > 0 ? (equity - oldV0) / oldV0 * 100.0 : 0.0;
-            log.info("[CAPITAL] v0={} reserveFund={} ({}%) activeCapital={} delta={}%",
+            log.info("[CAPITAL] v0={} reserveFund={} ({}%) activeCapital={} standbyFund={} delta={}%",
                     String.format("%.4f", equity),
                     String.format("%.4f", reserve),
                     String.format("%.1f", config.capital().reservePct() * 100),
                     String.format("%.4f", activeCapital),
+                    String.format("%.4f", state.standbyFund),
                     oldV0 > 0 ? String.format("%+.2f", deltaPct) : "n/a");
             return true;
         } catch (Exception e) {

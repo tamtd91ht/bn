@@ -120,35 +120,43 @@ public final class EntryPlanner {
         // thay vì state.v0 cache trong state file - user có thể nạp/rút USDT thủ công
         // hoặc lệnh trước đã ăn fee → v0 cache không phản ánh đúng số tiền sẵn sàng đặt.
         //
-        // Scanner-only mode: chia free USDT cho số slot còn trống (maxConc − positions mở).
+        // Scanner-only mode: chia deployable USDT cho số main slot còn trống.
+        // deployable = freeUsdt - standbyFund (không ăn vào phần standby carve-out).
         // Buffer 2% = phí taker 0.1%/lệnh + float precision → tránh -2010 "insufficient balance".
         // Mixed mode: vẫn dùng reserveAllocPerOpportunityUsdt (cơ hội scanner chỉ rút trần cố định).
         BigDecimal allocPerOp;
         BigDecimal runningFree;
         if (watchlistEmpty) {
             BigDecimal freeUsdt = accountCache.freeUsdt();
-            int remainingSlots = Math.max(1, maxConc - state.positions.size());
-            allocPerOp = freeUsdt.multiply(BigDecimal.valueOf(0.98))
+            // Trừ standbyFund ra để main slots không ăn vào phần dự phòng
+            BigDecimal standby = BigDecimal.valueOf(state.standbyFund);
+            BigDecimal deployable = freeUsdt.subtract(standby).max(BigDecimal.ZERO);
+            int mainOpen = countMainPositions(state);
+            int remainingSlots = Math.max(1, maxConc - mainOpen);
+            allocPerOp = deployable.multiply(BigDecimal.valueOf(0.98))
                     .divide(BigDecimal.valueOf(remainingSlots), 8, RoundingMode.DOWN);
-            runningFree = freeUsdt;
+            runningFree = deployable;
+            log.info("[ENTRY-S] Scanner freeUsdt={} standby={} deployable={} allocPerOp={} minSize={} mode=SCANNER_ONLY",
+                    freeUsdt.toPlainString(), standby.toPlainString(),
+                    deployable.toPlainString(), allocPerOp.toPlainString(), minSize.toPlainString());
         } else {
             allocPerOp = BigDecimal.valueOf(config.capital().reserveAllocPerOpportunityUsdt());
             runningFree = accountCache.freeUsdt();
+            log.info("[ENTRY-S] Scanner freeUsdt={} allocPerOp={} minSize={} mode=MIXED",
+                    runningFree.toPlainString(), allocPerOp.toPlainString(), minSize.toPlainString());
         }
-        log.info("[ENTRY-S] Scanner freeUsdt={} allocPerOp={} minSize={} mode={}",
-                runningFree.toPlainString(), allocPerOp.toPlainString(), minSize.toPlainString(),
-                watchlistEmpty ? "SCANNER_ONLY" : "MIXED");
 
         for (ScanResult r : scanResults) {
             if (r.signal() == ScanResult.Signal.NONE) continue;
             if (!config.isSymbolEnabled(r.symbol())) continue;
             if (state.positions.containsKey(r.symbol())) continue;
             if (isInCooldown(state, r.symbol())) continue;
-            if (state.positions.size() + decisions.size() >= maxConc) break;
+            // Chỉ đếm main positions (không tính STANDBY) cho giới hạn maxConc
+            if (countMainPositions(state) + decisions.size() >= maxConc) break;
             if (!fundingGuard.allowsLong(r.symbol())) continue;
 
             if (runningFree.compareTo(minSize) < 0) {
-                log.info("[ENTRY-S] freeUsdt còn {} < minSize {} - break",
+                log.info("[ENTRY-S] deployable còn {} < minSize {} - break",
                         runningFree.toPlainString(), minSize.toPlainString());
                 break;
             }
@@ -161,6 +169,88 @@ public final class EntryPlanner {
             runningFree = runningFree.subtract(alloc);
         }
         return decisions;
+    }
+
+    /**
+     * Tìm entry từ standby fund khi main slots đã đầy.
+     * Chọn signal tốt nhất (score cao nhất) chưa có trong positions/cooldown/alreadyPlanned.
+     *
+     * @param alreadyPlanned các decision đã plan trong tick này (wl + scanner)
+     */
+    public List<Decision.EntryBuy> planStandbyEntry(BotState state,
+                                                     List<ScanResult> scanResults,
+                                                     List<Decision.EntryBuy> alreadyPlanned) {
+        AppConfig config = configRegistry.current();
+        if (!config.capital().standbyEnabled()) return List.of();
+        if (!config.scanner().enabled()) return List.of();
+
+        int maxConc = config.risk().maxConcurrentPositions();
+        int mainOpen = countMainPositions(state);
+        int mainPlanned = (int) alreadyPlanned.stream()
+                .filter(d -> !"STANDBY".equals(d.source())).count();
+        // Chỉ deploy standby khi main slots đã đầy (kể cả planned trong tick này)
+        if (mainOpen + mainPlanned < maxConc) return List.of();
+
+        int standbyOpen = countStandbyPositions(state);
+        int standbyPlanned = (int) alreadyPlanned.stream()
+                .filter(d -> "STANDBY".equals(d.source())).count();
+        if (standbyOpen + standbyPlanned >= config.capital().standbyMaxPositionsV()) return List.of();
+
+        BigDecimal minSize = BigDecimal.valueOf(config.capital().minTradeSizeUsdt());
+        if (state.standbyFund < config.capital().minTradeSizeUsdt()) {
+            log.debug("[ENTRY-STANDBY] standbyFund={} < minSize={} - skip",
+                    String.format("%.2f", state.standbyFund), minSize.toPlainString());
+            return List.of();
+        }
+
+        double minScore = config.capital().standbyMinScoreV();
+        // Tập symbol đã có trong positions hoặc planned
+        java.util.Set<String> occupied = new java.util.HashSet<>(state.positions.keySet());
+        for (Decision.EntryBuy d : alreadyPlanned) occupied.add(d.symbol());
+
+        // Tìm signal tốt nhất (score cao nhất) đủ điều kiện
+        ScanResult best = null;
+        for (ScanResult r : scanResults) {
+            if (r.signal() == ScanResult.Signal.NONE) continue;
+            if (r.score() < minScore) continue;
+            if (!config.isSymbolEnabled(r.symbol())) continue;
+            if (occupied.contains(r.symbol())) continue;
+            if (isInCooldown(state, r.symbol())) continue;
+            if (!fundingGuard.allowsLong(r.symbol())) continue;
+            if (best == null || r.score() > best.score()) best = r;
+        }
+
+        if (best == null) {
+            log.debug("[ENTRY-STANDBY] Không có signal đủ score >= {} sau khi lọc", minScore);
+            return List.of();
+        }
+
+        BigDecimal freeUsdt = accountCache.freeUsdt();
+        BigDecimal standbyAvail = freeUsdt.min(BigDecimal.valueOf(state.standbyFund));
+        if (standbyAvail.compareTo(minSize) < 0) {
+            log.warn("[ENTRY-STANDBY] standbyAvail={} < minSize={} (freeUsdt={})",
+                    standbyAvail.toPlainString(), minSize.toPlainString(), freeUsdt.toPlainString());
+            return List.of();
+        }
+
+        BigDecimal alloc = standbyAvail.multiply(BigDecimal.valueOf(0.98)).setScale(8, RoundingMode.DOWN);
+        String reason = String.format("Standby entry: signal=%s score=%.2f qv=%,.0f (standbyFund=%.2f USDT)",
+                best.signal(), best.score(), best.quoteVolume24h(), state.standbyFund);
+        log.info("[ENTRY-STANDBY] {} PASS signal={} score={} → plan LONG {} USDT (standby)",
+                best.symbol(), best.signal(), String.format("%.2f", best.score()), alloc.toPlainString());
+        return List.of(new Decision.EntryBuy(best.symbol(), alloc, "STANDBY", reason));
+    }
+
+    /** Đếm main positions (source != STANDBY). */
+    private static int countMainPositions(BotState state) {
+        return (int) state.positions.values().stream()
+                .filter(p -> !"STANDBY".equals(p.source)).count();
+    }
+
+    /** Đếm standby positions. */
+    private static int countStandbyPositions(BotState state) {
+        return (int) state.positions.values().stream()
+                .filter(p -> "STANDBY".equals(p.source)).count();
     }
 
     private boolean isInCooldown(BotState state, String symbol) {

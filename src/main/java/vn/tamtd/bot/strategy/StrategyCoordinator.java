@@ -53,6 +53,7 @@ public final class StrategyCoordinator {
     private final PositionManager positionManager;
     private final EntryPlanner entryPlanner;
     private final RebalanceManager rebalanceManager;
+    private final StandbyRecoveryManager standbyRecoveryManager;
     private final LiquidationGuard liquidationGuard;
     private final CapitalInitializer capitalInitializer;
     private final Notifier notifier;
@@ -65,6 +66,7 @@ public final class StrategyCoordinator {
                                PositionManager positionManager,
                                EntryPlanner entryPlanner,
                                RebalanceManager rebalanceManager,
+                               StandbyRecoveryManager standbyRecoveryManager,
                                LiquidationGuard liquidationGuard,
                                CapitalInitializer capitalInitializer,
                                Notifier notifier) {
@@ -76,6 +78,7 @@ public final class StrategyCoordinator {
         this.positionManager = positionManager;
         this.entryPlanner = entryPlanner;
         this.rebalanceManager = rebalanceManager;
+        this.standbyRecoveryManager = standbyRecoveryManager;
         this.liquidationGuard = liquidationGuard;
         this.capitalInitializer = capitalInitializer;
         this.notifier = notifier;
@@ -172,7 +175,7 @@ public final class StrategyCoordinator {
         return decisions;
     }
 
-    /** Watchlist + scanner entry plan + missed alerts + rebalance. Chỉ dùng ở tick chính. */
+    /** Watchlist + scanner entry plan + standby + missed alerts + rebalance. Chỉ dùng ở tick chính. */
     private List<Decision> planEntries(BotState state,
                                        Map<String, BigDecimal> prices,
                                        AppConfig config) {
@@ -185,7 +188,20 @@ public final class StrategyCoordinator {
             List<Decision.EntryBuy> scannerEntries = entryPlanner.planScannerEntries(state, scanResults);
             decisions.addAll(scannerEntries);
 
-            alertMissedOpportunities(state, scanResults, scannerEntries, config);
+            // Standby recovery (time-based): đóng sớm nếu đủ tuổi + PnL >= 0
+            standbyRecoveryManager.evaluate(state, prices).ifPresent(decisions::add);
+
+            // Standby entry: vào lệnh từ standby fund khi main slots đã đầy
+            List<Decision.EntryBuy> allPlanned = new ArrayList<>(wlEntries);
+            allPlanned.addAll(scannerEntries);
+            List<Decision.EntryBuy> standbyEntries = entryPlanner.planStandbyEntry(
+                    state, scanResults, allPlanned);
+            decisions.addAll(standbyEntries);
+
+            // Alert missed: tổng hợp cả scanner + standby entries đã plan
+            List<Decision.EntryBuy> allEntries = new ArrayList<>(scannerEntries);
+            allEntries.addAll(standbyEntries);
+            alertMissedOpportunities(state, scanResults, allEntries, config);
 
             boolean hasPendingOpportunity = scanResults.stream()
                     .anyMatch(r -> r.signal() != ScanResult.Signal.NONE)

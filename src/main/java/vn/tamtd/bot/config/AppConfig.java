@@ -221,8 +221,25 @@ public record AppConfig(
             double reservePct,
             int v0SnapshotEveryHours,
             double minTradeSizeUsdt,
-            double reserveAllocPerOpportunityUsdt
-    ) {}
+            double reserveAllocPerOpportunityUsdt,
+            /** % v0 luôn giữ làm standby fund (không deploy vào main slots). null/0 = tắt. */
+            Double standbyReservePct,
+            /** Score tối thiểu của scanner signal để trigger standby entry. */
+            Double standbyMinScore,
+            /** Số vị thế standby tối đa cùng lúc. */
+            Integer standbyMaxPositions,
+            /** Sau N giờ, nếu PnL >= standbyMinRecoveryPnlPct → đóng sớm để thu hồi standby fund. */
+            Integer standbyRecoveryHours,
+            /** PnL% tối thiểu để time-based recovery kích hoạt. 0.0 = hòa vốn là đủ. */
+            Double standbyMinRecoveryPnlPct
+    ) {
+        public double standbyReservePctV()     { return standbyReservePct == null ? 0.0 : standbyReservePct; }
+        public double standbyMinScoreV()       { return standbyMinScore == null ? 15.5 : standbyMinScore; }
+        public int    standbyMaxPositionsV()   { return standbyMaxPositions == null ? 1 : standbyMaxPositions; }
+        public int    standbyRecoveryHoursV()  { return standbyRecoveryHours == null ? 4 : standbyRecoveryHours; }
+        public double standbyMinRecoveryPnlPctV() { return standbyMinRecoveryPnlPct == null ? 0.0 : standbyMinRecoveryPnlPct; }
+        public boolean standbyEnabled()        { return standbyReservePctV() > 0; }
+    }
 
     public record Risk(
             double dailyDrawdownPct,

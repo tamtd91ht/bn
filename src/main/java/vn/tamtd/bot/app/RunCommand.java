@@ -41,6 +41,7 @@ import vn.tamtd.bot.strategy.FundingRateGuard;
 import vn.tamtd.bot.strategy.LiquidationGuard;
 import vn.tamtd.bot.strategy.PositionManager;
 import vn.tamtd.bot.strategy.RebalanceManager;
+import vn.tamtd.bot.strategy.StandbyRecoveryManager;
 import vn.tamtd.bot.strategy.StrategyCoordinator;
 
 import java.math.BigDecimal;
@@ -151,10 +152,11 @@ public final class RunCommand implements Callable<Integer> {
         PositionManager positionManager = new PositionManager(registry, trendIndicators, filterCache);
         EntryPlanner entryPlanner = new EntryPlanner(registry, trendIndicators, barSeriesCache, fundingGuard, accountCache);
         RebalanceManager rebalanceManager = new RebalanceManager(registry, trendIndicators, barSeriesCache);
+        StandbyRecoveryManager standbyRecoveryManager = new StandbyRecoveryManager(registry);
         StrategyCoordinator coordinator = new StrategyCoordinator(
                 registry, exchangeClient, barSeriesCache, trendIndicators, scanner,
-                positionManager, entryPlanner, rebalanceManager, liquidationGuard,
-                capitalInitializer, notifier);
+                positionManager, entryPlanner, rebalanceManager, standbyRecoveryManager,
+                liquidationGuard, capitalInitializer, notifier);
         OrderExecutor orderExecutor = new OrderExecutor(
                 registry, exchangeClient, gateway, filterCache, jsonlWriter, stateStore, notifier, accountCache);
 

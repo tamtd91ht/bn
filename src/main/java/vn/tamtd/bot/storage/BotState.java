@@ -41,6 +41,13 @@ public final class BotState {
     /** Manual pause qua Telegram {@code /pause}. Không kicked bởi kill-switch. */
     public boolean paused;
 
+    /**
+     * USDT carve-out làm standby fund (cơ hội dự phòng).
+     * Init khi v0 snapshot (= v0 × standbyReservePct); giảm khi vào lệnh STANDBY;
+     * restore khi vị thế STANDBY đóng (TP / SL / STANDBY_RECOVER).
+     */
+    public double standbyFund;
+
     /** Số tick liên tiếp drawdown ≥ ngưỡng. Reset về 0 khi tick không lỗ. Khi đạt
      *  {@code risk.killSwitchHysteresisTicks} → fire kill-switch. */
     public int killSwitchTriggerCount;

@@ -88,6 +88,9 @@ public final class OrderExecutor {
             } else if (decision instanceof Decision.KillSwitchSellAll d) {
                 executeClose(d.symbol(), d.qtyToSell(), "KILL_SWITCH",
                         d.reason(), state, tickTs, true);
+            } else if (decision instanceof Decision.StandbyRecover d) {
+                executeClose(d.symbol(), d.qtyToSell(), "STANDBY_RECOVER",
+                        d.reason(), state, tickTs, true);
             }
         } catch (Exception e) {
             log.error("[EXEC:FAIL] Execute decision {} lỗi: {}", decision, e.getMessage(), e);
@@ -172,9 +175,16 @@ public final class OrderExecutor {
 
         // === Update state ===
         double reserveBefore = state.reserveFund;
+        double standbyBefore = state.standbyFund;
         if ("SCANNER".equals(d.source())) {
             state.reserveFund -= fill.cummulativeQuoteQty().doubleValue();
             if (state.reserveFund < 0) state.reserveFund = 0;
+        } else if ("STANDBY".equals(d.source())) {
+            state.standbyFund -= fill.cummulativeQuoteQty().doubleValue();
+            if (state.standbyFund < 0) state.standbyFund = 0;
+            log.info("[BUY:STANDBY] standbyFund {}→{}",
+                    String.format("%.4f", standbyBefore),
+                    String.format("%.4f", state.standbyFund));
         }
         AppConfig.Exit exitCfg = config.exitFor(d.symbol());
         Position p;
@@ -321,7 +331,9 @@ public final class OrderExecutor {
 
         boolean backToReserve = "SCANNER".equals(position.source)
                 || "REBALANCE".equals(type);
+        boolean backToStandby = "STANDBY".equals(position.source);
         double reserveBefore = state.reserveFund;
+        double standbyBefore = state.standbyFund;
         if (backToReserve) {
             // Futures: margin đã giải phóng + PnL → ≈ margin + realizedPnl về reserve
             if (mode.isFutures() && position.marginUsdt != null) {
@@ -333,6 +345,20 @@ public final class OrderExecutor {
             } else {
                 state.reserveFund += exitValue.doubleValue();
             }
+        } else if (backToStandby) {
+            // Vị thế STANDBY đóng → trả lại exitValue về standby fund
+            if (mode.isFutures() && position.marginUsdt != null) {
+                double marginFraction = fill.executedQty()
+                        .divide(position.qty, 8, RoundingMode.HALF_UP)
+                        .doubleValue();
+                double marginReleased = position.marginUsdt.doubleValue() * marginFraction;
+                state.standbyFund += marginReleased + realizedPnl.doubleValue();
+            } else {
+                state.standbyFund += exitValue.doubleValue();
+            }
+            log.info("[SELL:STANDBY] standbyFund {}→{}",
+                    String.format("%.4f", standbyBefore),
+                    String.format("%.4f", state.standbyFund));
         }
 
         if (fullyClosed) {
