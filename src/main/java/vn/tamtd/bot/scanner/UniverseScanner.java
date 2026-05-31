@@ -13,8 +13,10 @@ import vn.tamtd.bot.marketdata.BarSeriesCache;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Quét top-N USDT pair theo volume 24h, gắn signal.
@@ -69,8 +71,32 @@ public final class UniverseScanner {
             return List.of();
         }
 
-        candidates.sort(Comparator.comparingDouble(Candidate::qv).reversed());
-        if (candidates.size() > topN) candidates = candidates.subList(0, topN);
+        int momentumSlots = config.scanner().momentumSlotsV();
+        if (momentumSlots > 0) {
+            double mMinPct = config.scanner().momentumMinPctV();
+            double mMaxPct = config.scanner().momentumMaxPctV();
+            int volumeSlots = Math.max(topN - momentumSlots, 0);
+
+            List<Candidate> byVol = candidates.stream()
+                    .sorted(Comparator.comparingDouble(Candidate::qv).reversed())
+                    .limit(volumeSlots)
+                    .collect(Collectors.toList());
+            Set<String> volSymbols = byVol.stream().map(Candidate::symbol)
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            List<Candidate> byMomentum = candidates.stream()
+                    .filter(c -> c.pct() >= mMinPct && c.pct() <= mMaxPct)
+                    .filter(c -> !volSymbols.contains(c.symbol()))
+                    .sorted(Comparator.comparingDouble(Candidate::pct).reversed())
+                    .limit(momentumSlots)
+                    .collect(Collectors.toList());
+            candidates = new ArrayList<>(byVol);
+            candidates.addAll(byMomentum);
+            log.info("[SCAN] Universe: {} by-volume + {} by-momentum = {} total",
+                    byVol.size(), byMomentum.size(), candidates.size());
+        } else {
+            candidates.sort(Comparator.comparingDouble(Candidate::qv).reversed());
+            if (candidates.size() > topN) candidates = candidates.subList(0, topN);
+        }
 
         String tfPrimary = config.timeframes().primary();
         String tfConfirm = config.timeframes().confirm();
@@ -83,7 +109,7 @@ public final class UniverseScanner {
                 BarSeries s4h = barSeriesCache.get(c.symbol, tfConfirm);
 
                 ScanResult.Signal signal = ScanResult.Signal.NONE;
-                if (signalDetector.isStrongWave(s4h)) signal = ScanResult.Signal.STRONG_WAVE;
+                if (signalDetector.isStrongWave(s4h, s1h)) signal = ScanResult.Signal.STRONG_WAVE;
                 else if (signalDetector.isUptrendEmerging(s1h)) signal = ScanResult.Signal.UPTREND_EMERGING;
                 else if (signalDetector.isBottomReversal(s1h)) signal = ScanResult.Signal.BOTTOM_REVERSAL;
 

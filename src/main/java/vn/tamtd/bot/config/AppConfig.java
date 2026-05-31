@@ -279,12 +279,26 @@ public record AppConfig(
             boolean enabled,
             int topN,
             double minQuoteVolume24hUsdt,
-            List<String> blacklist
+            List<String> blacklist,
+            /** Số slot trong topN dành riêng cho momentum coins (top 24h % thay đổi trong [momentumMinPct, momentumMaxPct]).
+             *  Phần còn lại (topN - momentumSlots) lấy theo volume.
+             *  0 / null = tắt tính năng, toàn bộ topN lấy theo volume như cũ. */
+            Integer momentumSlots,
+            /** 24h pct change tối thiểu để 1 coin được đưa vào momentum tier. */
+            Double momentumMinPct,
+            /** 24h pct change tối đa — loại bỏ coin đã pump quá (entry muộn). */
+            Double momentumMaxPct
     ) {
         public Scanner {
             if (blacklist == null) blacklist = List.of();
             else blacklist = Collections.unmodifiableList(blacklist);
+            if (momentumSlots == null) momentumSlots = 0;
+            if (momentumMinPct == null) momentumMinPct = 3.0;
+            if (momentumMaxPct == null) momentumMaxPct = 25.0;
         }
+        public int momentumSlotsV()     { return momentumSlots == null ? 0 : momentumSlots; }
+        public double momentumMinPctV() { return momentumMinPct == null ? 3.0 : momentumMinPct; }
+        public double momentumMaxPctV() { return momentumMaxPct == null ? 25.0 : momentumMaxPct; }
     }
 
     public record Timeframes(

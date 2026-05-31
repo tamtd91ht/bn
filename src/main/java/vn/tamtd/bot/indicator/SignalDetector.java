@@ -87,7 +87,7 @@ public final class SignalDetector {
         return higherLow && volOk;
     }
 
-    public boolean isStrongWave(BarSeries s4h) {
+    public boolean isStrongWave(BarSeries s4h, BarSeries s1h) {
         AppConfig.Signals sig = configRegistry.current().signals();
         int emaShort = sig.emaShort();
         int rsiPeriod = sig.rsiPeriod();
@@ -118,6 +118,16 @@ public final class SignalDetector {
             if (rsi4h > rsiMax) {
                 return false;
             }
+        }
+
+        // Filter bổ sung: sau khi 4h pump, RSI 1h thường đã vọt cao → bot vào đúng đỉnh ngắn hạn.
+        // Dữ liệu thực: STRONG_WAVE hit SL trong 0.7-1.1h vì entry muộn sau sóng.
+        // Chỉ cho phép vào khi RSI 1h vẫn còn dưới ngưỡng overbought (rsiEntryMax = 60).
+        if (s1h != null && s1h.getBarCount() >= rsiPeriod + 3) {
+            ClosePriceIndicator close1h = new ClosePriceIndicator(s1h);
+            RSIIndicator rsi1h = new RSIIndicator(close1h, rsiPeriod);
+            double rsiVal1h = rsi1h.getValue(s1h.getEndIndex()).doubleValue();
+            if (rsiVal1h > sig.rsiEntryMax()) return false;
         }
         return true;
     }
