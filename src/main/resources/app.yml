@@ -113,8 +113,18 @@ watchlist:
 scanner:
   enabled: true                         # false = reserveFund đóng băng, chỉ trade watchlist
   topN: 30
-  minQuoteVolume24hUsdt: 30000000       # Volume 24h tối thiểu (cũ 50M — hạ xuống 30M để rộng universe khi market sideway/thanh khoản thấp; SAHARA 86M đã từng dump nên không an toàn tuyệt đối)
+  minQuoteVolume24hUsdt: 5000000       # Volume 24h tối thiểu. Hạ dần 50M→30M→5M để rộng universe; chấp nhận rủi ro coin nhỏ hơn, bù bằng signal filter.
+  # --- MOMENTUM TIER ---
+  # Thay vì lấy toàn bộ topN theo volume (bias về large-cap ít biến động),
+  # dành N slot riêng cho các coin đang có momentum 24h trong [momentumMinPct, momentumMaxPct].
+  # Phần còn lại (topN - momentumSlots) vẫn lấy theo volume như cũ.
+  # 0 = tắt tính năng, giữ hành vi cũ.
+  momentumSlots: 10                     # 10/30 slot dành cho coin đang tăng mạnh
+  momentumMinPct: 3.0                   # Tối thiểu +3% trong 24h (loại coin flat)
+  momentumMaxPct: 20.0                  # Tối đa +20% (tránh coin đã pump quá muộn)
   blacklist:
+    - SOLUSDT
+    - XRPUSDT
     - BTCUSDT
     - ETHUSDT
     - BNBUSDT
@@ -134,7 +144,7 @@ timeframes:
 
 # ========= SCHEDULING =========
 scheduling:
-  tickMinutes: 15                       # Chu kỳ tick chính (check TP/SL/scan + scanner + entry)
+  tickMinutes: 5                        # Chu kỳ tick chính (check TP/SL/scan + scanner + entry). Giảm 15→5 để bắt signal sớm hơn sau candle 1h đóng.
   fastTickSeconds: 60                   # Fast loop chỉ check positions (TP/SL) mỗi N giây.
                                         # 0 = tắt → chỉ tick chính như v1. Khuyến nghị 60s để
                                         # SL phản ứng nhanh khi giá dump (tránh case lệch -3% như APE).
