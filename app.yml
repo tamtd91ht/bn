@@ -136,6 +136,7 @@ scanner:
     - USD1USDT
     - RLUSDUSDT
     - EURUSDT       # Cặp ngoại hối EUR/USD, biến động <0.5%/ngày — không hợp altcoin strategy TP 5%/SL 4%
+    - 币安人生USDT   # Token scam/phishing giả mạo Binance, lọt vào universe vì volume ảo
 
 # ========= TIMEFRAMES =========
 timeframes:
