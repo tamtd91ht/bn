@@ -40,4 +40,8 @@ public sealed interface Decision {
     /** Đóng sớm vị thế standby để thu hồi vốn dự phòng (time-based recovery). */
     record StandbyRecover(String symbol, BigDecimal qtyToSell, String reason)
             implements Decision {}
+
+    /** Đóng main position đứng yên quá lâu để tái sử dụng vốn (time-stop). */
+    record StaleExit(String symbol, BigDecimal qtyToSell, String reason)
+            implements Decision {}
 }

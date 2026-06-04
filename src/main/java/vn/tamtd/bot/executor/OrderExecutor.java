@@ -91,6 +91,9 @@ public final class OrderExecutor {
             } else if (decision instanceof Decision.StandbyRecover d) {
                 executeClose(d.symbol(), d.qtyToSell(), "STANDBY_RECOVER",
                         d.reason(), state, tickTs, true);
+            } else if (decision instanceof Decision.StaleExit d) {
+                executeClose(d.symbol(), d.qtyToSell(), "TIME_STOP",
+                        d.reason(), state, tickTs, true);
             }
         } catch (Exception e) {
             log.error("[EXEC:FAIL] Execute decision {} lỗi: {}", decision, e.getMessage(), e);
@@ -395,6 +398,7 @@ public final class OrderExecutor {
             case "STOP_LOSS" -> NotifyEvent.STOP_LOSS;
             case "REBALANCE" -> NotifyEvent.REBALANCE;
             case "KILL_SWITCH" -> NotifyEvent.KILL_SWITCH;
+            case "TIME_STOP" -> NotifyEvent.FULL_TP;
             default -> NotifyEvent.ERROR;
         };
         notifier.send(event, String.format(

@@ -58,7 +58,7 @@ exit:
   partialTpRatio: 0.5              # TP lần 1 và trend còn UP → bán 50%, giữ 50% chờ TP kế
   trailingTpStepPct: 3.0           # Mỗi lần partial TP, nâng ngưỡng TP kế +3%
   stopLossPct: 4.0                 # SL (% so giá entry). Altcoin biến động → nới 4% để tránh wick false.
-  maxDropChecks: 1                 # Dính SL là bán ngay, KHÔNG chờ tick sau. Altcoin cascade dump → cắt quyết liệt.
+  maxDropChecks: 2                 # Cần 2 fast-tick (~60-120s) liên tiếp dưới -SL mới bán (lọc wick đơn). Trend DOWNTREND không hồi vẫn bán ngay (PositionManager.evaluateStopLoss).
   recoveryResetPct: -2.0           # Hồi về > ngưỡng này → reset dropCheckCount (match với SL mới)
   breakevenAfterPartialTp: true    # Sau partial TP dời SL về breakeven
   cooldownAfterLossHours: 24       # Sau stop-loss không mua lại coin đó trong N giờ. Cũ 4h quá ngắn → tái nhập coin vừa thua trong cùng phiên.
@@ -74,13 +74,22 @@ capital:
   reservePct: 0.20                     # % vốn gốc giữ làm reserveFund (dùng cho scanner opportunity)
   v0SnapshotEveryHours: 24             # Mỗi 24h snapshot lại v0 (chỉ khi không có position mở)
   minTradeSizeUsdt: 10.0               # Lệnh < số này sẽ bị skip (tránh phí cao)
-  reserveAllocPerOpportunityUsdt: 50.0 # Trần mỗi lần rút reserveFund vào 1 coin scanner
+  reserveAllocPerOpportunityUsdt: 50.0 # Trần mỗi lần rút reserveFund vào 1 coin scanner (mixed mode)
+  # Trần USDT mỗi lệnh scanner ở SCANNER-ONLY mode (watchlist rỗng). 0 = tắt → chia đều deployable/slot.
+  # Giữ mỗi entry nhỏ để còn dư địa vào lệnh ở các tick sau (tránh 1 lệnh ăn gần hết deployable khi ít slot trống).
+  maxAllocPerTradeUsdt: 50.0
+  # --- TIME-STOP MAIN POSITION ---
+  # Main position (source != STANDBY) giữ > N giờ mà PnL còn "lờ đờ" → đóng để giải phóng slot + thu hồi vốn.
+  # Tránh case coin nằm im quanh 0% nhiều ngày khoá cứng slot, khiến bot bỏ lỡ tín hiệu mạnh. 0 = tắt.
+  mainMaxHoldHours: 12
+  # Chỉ time-stop khi PnL% < ngưỡng này (lệnh đang chạy tốt sắp TP thì để TP lo, không cắt sớm).
+  mainStaleExitMaxPnlPct: 1.0
   # --- STANDBY FUND (quỹ cơ hội) ---
   # % v0 luôn carve-out, KHÔNG deploy vào main slots, chỉ dùng khi main slots đầy.
   # 0.0 = tắt tính năng standby. Khuyến nghị 0.15–0.20.
   standbyReservePct: 0.20
   # Score tối thiểu của scanner signal để trigger entry từ standby fund.
-  standbyMinScore: 15.5
+  standbyMinScore: 11.0                 # Cũ 15.5 — hạ để standby ăn được BOTTOM_REVERSAL (score thực tế 10.7–12.6) khi main slot đầy.
   # Tối đa N vị thế standby cùng lúc.
   standbyMaxPositions: 2
   # Sau N giờ, nếu PnL >= standbyMinRecoveryPnlPct → đóng sớm để thu hồi vốn.
@@ -92,7 +101,7 @@ capital:
 risk:
   dailyDrawdownPct: 0.10               # Equity giảm > 10% trong ngày → kill-switch. Altcoin biến động mạnh, 5% quá chặt dễ false-trigger.
   pauseHours: 24                       # Kill-switch pause trong N giờ
-  maxConcurrentPositions: 3            # 3 main slots + 1 standby = 4 vị thế tối đa. Main allocPerOp = (X×80%×0.98)/3, standby = X×20%×0.98.
+  maxConcurrentPositions: 5            # 5 main slots + 2 standby = 7 vị thế tối đa. Tăng 3→5 vừa giảm vốn/lệnh (deployable/5) vừa bắt thêm tín hiệu (giảm [MISS]).
   maxPnlPctEligibleForRebalance: -100  # TẮT rebalance (đặt ngưỡng âm sâu để không position nào lọt). Paper 9 ngày: rebalance lock loss 6/6 lần = -3.82 USDT (93% realized loss). Tôn trọng SL=-4% thay vì đổi coin lock loss sớm.
   rebalanceMinHoldMinutes: 120         # Không rebalance position giữ < 2h (tránh churn mua-bán-mua)
   # --- FUTURES ONLY ---

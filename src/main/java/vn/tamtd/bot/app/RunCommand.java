@@ -39,6 +39,7 @@ import vn.tamtd.bot.strategy.EntryPlanner;
 import vn.tamtd.bot.strategy.RehydrateService;
 import vn.tamtd.bot.strategy.FundingRateGuard;
 import vn.tamtd.bot.strategy.LiquidationGuard;
+import vn.tamtd.bot.strategy.MainStaleExitManager;
 import vn.tamtd.bot.strategy.PositionManager;
 import vn.tamtd.bot.strategy.RebalanceManager;
 import vn.tamtd.bot.strategy.StandbyRecoveryManager;
@@ -153,10 +154,11 @@ public final class RunCommand implements Callable<Integer> {
         EntryPlanner entryPlanner = new EntryPlanner(registry, trendIndicators, barSeriesCache, fundingGuard, accountCache);
         RebalanceManager rebalanceManager = new RebalanceManager(registry, trendIndicators, barSeriesCache);
         StandbyRecoveryManager standbyRecoveryManager = new StandbyRecoveryManager(registry);
+        MainStaleExitManager mainStaleExitManager = new MainStaleExitManager(registry);
         StrategyCoordinator coordinator = new StrategyCoordinator(
                 registry, exchangeClient, barSeriesCache, trendIndicators, scanner,
                 positionManager, entryPlanner, rebalanceManager, standbyRecoveryManager,
-                liquidationGuard, capitalInitializer, notifier);
+                mainStaleExitManager, liquidationGuard, capitalInitializer, notifier);
         OrderExecutor orderExecutor = new OrderExecutor(
                 registry, exchangeClient, gateway, filterCache, jsonlWriter, stateStore, notifier, accountCache);
 

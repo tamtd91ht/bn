@@ -54,6 +54,7 @@ public final class StrategyCoordinator {
     private final EntryPlanner entryPlanner;
     private final RebalanceManager rebalanceManager;
     private final StandbyRecoveryManager standbyRecoveryManager;
+    private final MainStaleExitManager mainStaleExitManager;
     private final LiquidationGuard liquidationGuard;
     private final CapitalInitializer capitalInitializer;
     private final Notifier notifier;
@@ -67,6 +68,7 @@ public final class StrategyCoordinator {
                                EntryPlanner entryPlanner,
                                RebalanceManager rebalanceManager,
                                StandbyRecoveryManager standbyRecoveryManager,
+                               MainStaleExitManager mainStaleExitManager,
                                LiquidationGuard liquidationGuard,
                                CapitalInitializer capitalInitializer,
                                Notifier notifier) {
@@ -79,6 +81,7 @@ public final class StrategyCoordinator {
         this.entryPlanner = entryPlanner;
         this.rebalanceManager = rebalanceManager;
         this.standbyRecoveryManager = standbyRecoveryManager;
+        this.mainStaleExitManager = mainStaleExitManager;
         this.liquidationGuard = liquidationGuard;
         this.capitalInitializer = capitalInitializer;
         this.notifier = notifier;
@@ -180,6 +183,10 @@ public final class StrategyCoordinator {
                                        Map<String, BigDecimal> prices,
                                        AppConfig config) {
         List<Decision> decisions = new ArrayList<>();
+
+        // Time-stop: đóng main position đứng yên quá lâu để giải phóng slot + thu hồi vốn.
+        mainStaleExitManager.evaluate(state, prices).ifPresent(decisions::add);
+
         List<Decision.EntryBuy> wlEntries = entryPlanner.planWatchlistEntries(state);
         decisions.addAll(wlEntries);
 

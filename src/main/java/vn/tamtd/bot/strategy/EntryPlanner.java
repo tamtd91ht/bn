@@ -135,6 +135,9 @@ public final class EntryPlanner {
             int remainingSlots = Math.max(1, maxConc - mainOpen);
             allocPerOp = deployable.multiply(BigDecimal.valueOf(0.98))
                     .divide(BigDecimal.valueOf(remainingSlots), 8, RoundingMode.DOWN);
+            // Kẹp trần mỗi lệnh để giữ entry nhỏ, dành deployable cho tín hiệu các tick sau.
+            double cap = config.capital().maxAllocPerTradeUsdtV();
+            if (cap > 0) allocPerOp = allocPerOp.min(BigDecimal.valueOf(cap));
             runningFree = deployable;
             log.info("[ENTRY-S] Scanner freeUsdt={} standby={} deployable={} allocPerOp={} minSize={} mode=SCANNER_ONLY",
                     freeUsdt.toPlainString(), standby.toPlainString(),

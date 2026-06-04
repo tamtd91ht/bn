@@ -231,7 +231,13 @@ public record AppConfig(
             /** Sau N giờ, nếu PnL >= standbyMinRecoveryPnlPct → đóng sớm để thu hồi standby fund. */
             Integer standbyRecoveryHours,
             /** PnL% tối thiểu để time-based recovery kích hoạt. 0.0 = hòa vốn là đủ. */
-            Double standbyMinRecoveryPnlPct
+            Double standbyMinRecoveryPnlPct,
+            /** Trần USDT mỗi lệnh scanner (scanner-only mode). null/0 = tắt → chia đều theo slot. */
+            Double maxAllocPerTradeUsdt,
+            /** Time-stop main position: giữ > N giờ mà PnL còn "lờ đờ" → đóng để giải phóng slot. null/0 = tắt. */
+            Integer mainMaxHoldHours,
+            /** Chỉ time-stop main khi PnL% < ngưỡng này (tránh cắt lệnh đang chạy tốt sắp TP). */
+            Double mainStaleExitMaxPnlPct
     ) {
         public double standbyReservePctV()     { return standbyReservePct == null ? 0.0 : standbyReservePct; }
         public double standbyMinScoreV()       { return standbyMinScore == null ? 15.5 : standbyMinScore; }
@@ -239,6 +245,9 @@ public record AppConfig(
         public int    standbyRecoveryHoursV()  { return standbyRecoveryHours == null ? 4 : standbyRecoveryHours; }
         public double standbyMinRecoveryPnlPctV() { return standbyMinRecoveryPnlPct == null ? 0.0 : standbyMinRecoveryPnlPct; }
         public boolean standbyEnabled()        { return standbyReservePctV() > 0; }
+        public double maxAllocPerTradeUsdtV()  { return maxAllocPerTradeUsdt == null ? 0.0 : maxAllocPerTradeUsdt; }
+        public int    mainMaxHoldHoursV()      { return mainMaxHoldHours == null ? 0 : mainMaxHoldHours; }
+        public double mainStaleExitMaxPnlPctV() { return mainStaleExitMaxPnlPct == null ? 1.0 : mainStaleExitMaxPnlPct; }
     }
 
     public record Risk(
