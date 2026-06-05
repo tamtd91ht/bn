@@ -15,6 +15,12 @@
 # đổi config cần rebuild + redeploy jar (hot-reload không áp dụng cho file trong jar).
 # ============================================================
 
+# Version của config — BUMP MỖI LẦN sửa file này rồi rebuild/deploy jar.
+# Log ra lúc start (app.log + Telegram). Nếu app.yml ngoài cạnh jar có version
+# khác bản bundled trong jar → bot in WARNING "[VERSION] ... LỆCH ..." để biết
+# file config không khớp binary đang chạy.
+version: "10.31.5.6.26"
+
 # ========= EXCHANGE =========
 exchange:
   # SPOT       = giao ngay (không đòn bẩy, long-only).

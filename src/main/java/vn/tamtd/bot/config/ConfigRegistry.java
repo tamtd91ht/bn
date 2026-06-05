@@ -74,8 +74,8 @@ public final class ConfigRegistry {
             return false;
         }
         currentRef.set(fresh);
-        log.info("[CONFIG:RELOADED] OK. mode={} lev={} testnet={} watchlist={} overrides={}",
-                fresh.exchange().mode(), fresh.exchange().leverage(),
+        log.info("[CONFIG:RELOADED] OK. version={} mode={} lev={} testnet={} watchlist={} overrides={}",
+                fresh.versionV(), fresh.exchange().mode(), fresh.exchange().leverage(),
                 fresh.exchange().useTestnet(),
                 fresh.watchlist().symbols(),
                 fresh.symbols().keySet());

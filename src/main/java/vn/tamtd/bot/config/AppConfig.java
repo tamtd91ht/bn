@@ -20,6 +20,9 @@ import java.util.Map;
  * dùng snapshot cũ xuyên suốt tick, an toàn.
  */
 public record AppConfig(
+        /** Version của config — tự gõ trong app.yml, log ra lúc start để xác nhận
+         *  app.yml ngoài có khớp bản bundled trong jar đang chạy không. */
+        String version,
         Dynamic dynamic,
         Exchange exchange,
         Signals signals,
@@ -48,6 +51,12 @@ public record AppConfig(
         if (symbols == null) symbols = Map.of();
         if (recovery == null) recovery = Recovery.defaults();
         if (paperTrade == null) paperTrade = PaperTrade.defaults();
+    }
+
+    /** Version config, fallback "(chưa set)" nếu app.yml chưa khai báo. */
+    @JsonIgnore
+    public String versionV() {
+        return version == null || version.isBlank() ? "(chưa set)" : version;
     }
 
     /** Shortcut tiện dùng ở strategy/order code. */

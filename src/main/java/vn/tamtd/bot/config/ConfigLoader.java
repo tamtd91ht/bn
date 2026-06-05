@@ -50,6 +50,7 @@ public final class ConfigLoader {
         AppConfig.Secrets secrets = AppSecrets.fromEnvAndBundled();
 
         AppConfig merged = new AppConfig(
+                parsed.version(),
                 parsed.dynamic(),
                 parsed.exchange(),
                 parsed.signals(),
@@ -69,13 +70,21 @@ public final class ConfigLoader {
                 secrets
         );
         merged.validate();
-        log.info("Config loaded: mode={}, leverage={}, testnet={}, strategy=long_only, "
-                        + "watchlist={}, hotReload={}, symbolOverrides={}",
+        String jarVersion = bundledVersion();
+        log.info("Config loaded: version={} (jar bundled={}), mode={}, leverage={}, testnet={}, "
+                        + "strategy=long_only, watchlist={}, hotReload={}, symbolOverrides={}",
+                merged.versionV(), jarVersion == null ? "(không đọc được)" : jarVersion,
                 merged.exchange().mode(), merged.exchange().leverage(),
                 merged.exchange().useTestnet(),
                 merged.watchlist().symbols(),
                 merged.dynamic().hotReload(),
                 merged.symbols().keySet());
+        // Cảnh báo nếu app.yml đang dùng lệch version so với bản đóng trong jar đang chạy.
+        if (jarVersion != null && !java.util.Objects.equals(merged.version(), jarVersion)) {
+            log.warn("[VERSION] app.yml đang dùng (version={}) LỆCH với bản bundled trong jar (version={}) "
+                            + "→ app.yml KHÔNG khớp jar đang chạy! Kiểm tra lại file/deploy.",
+                    merged.versionV(), jarVersion);
+        }
         return merged;
     }
 
@@ -88,6 +97,7 @@ public final class ConfigLoader {
         }
         AppConfig.Secrets secrets = AppSecrets.fromEnvAndBundled();
         AppConfig merged = new AppConfig(
+                parsed.version(),
                 parsed.dynamic(), parsed.exchange(), parsed.signals(), parsed.exit(),
                 parsed.capital(), parsed.risk(), parsed.watchlist(), parsed.scanner(),
                 parsed.timeframes(), parsed.scheduling(), parsed.storage(),
@@ -97,6 +107,19 @@ public final class ConfigLoader {
                 secrets);
         merged.validate();
         return merged;
+    }
+
+    /** Version đóng gói trong jar (classpath:/app.yml) — luôn phản ánh binary đang chạy.
+     *  null nếu không đọc được. */
+    public static String bundledVersion() {
+        try (var in = ConfigLoader.class.getResourceAsStream("/" + APP_YAML)) {
+            if (in == null) return null;
+            AppConfig c = YAML.readValue(in, AppConfig.class);
+            return c.version();
+        } catch (Exception e) {
+            log.warn("Đọc version bundled trong jar lỗi: {}", e.getMessage());
+            return null;
+        }
     }
 
     private static AppConfig readAppYaml(Path baseDir) throws IOException {

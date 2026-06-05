@@ -77,6 +77,7 @@ public final class RunCommand implements Callable<Integer> {
         Path baseDir = configDir != null ? configDir : ConfigLoader.jarDir();
         ConfigRegistry registry = ConfigRegistry.bootstrap(baseDir);
         AppConfig config = registry.current();
+        log.info("App version (config app.yml) = {}", config.versionV());
         config.validateSecretsForTrading();
         boolean paperMode = config.paperTrade() != null && config.paperTrade().enabledV();
         log.info("Mode: {}, leverage={}, testnet: {}, paperTrade: {}, watchlist: {}",
@@ -232,8 +233,9 @@ public final class RunCommand implements Callable<Integer> {
                 String stoppedAt = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"))
                         .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z"));
                 String stopMsg = String.format(
-                        "Bot STOPPED on %s at %s | v0=%.2f reserveFund=%.2f positions=%s",
-                        hostname, stoppedAt, state.v0, state.reserveFund, state.positions.keySet());
+                        "Bot STOPPED on %s at %s | version=%s v0=%.2f reserveFund=%.2f positions=%s",
+                        hostname, stoppedAt, config.versionV(),
+                        state.v0, state.reserveFund, state.positions.keySet());
                 log.info("=== APP_STOP === {}", stopMsg);
                 notifier.send(NotifyEvent.APP_STOP, stopMsg);
             } catch (Exception e) {
@@ -262,6 +264,7 @@ public final class RunCommand implements Callable<Integer> {
                                               ExchangeClient client) {
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("Bot STARTED on %s at %s%n", hostname, startedAt));
+        sb.append(String.format("Version=%s%n", config.versionV()));
         sb.append(String.format("Mode=%s lev=%s testnet=%s scanner=%s tick=%dm%n",
                 config.exchange().mode(), config.exchange().leverage(),
                 config.exchange().useTestnet(),
