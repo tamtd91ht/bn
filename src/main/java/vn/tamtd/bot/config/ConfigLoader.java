@@ -1,6 +1,7 @@
 package vn.tamtd.bot.config;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import org.slf4j.Logger;
@@ -29,6 +30,9 @@ public final class ConfigLoader {
     private static final ObjectMapper YAML = new ObjectMapper(new YAMLFactory());
     static {
         YAML.findAndRegisterModules();
+        // Bỏ qua field lạ thay vì ném lỗi → app.yml và jar lệch phiên bản (vd field mới
+        // cooldownAfterWinHours trên jar cũ, hoặc field cũ đã xoá) vẫn load được, không crash.
+        YAML.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     }
 
     public static final String APP_YAML = "app.yml";

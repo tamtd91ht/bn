@@ -105,7 +105,7 @@ risk:
   dailyDrawdownPct: 0.10               # Equity giảm > 10% trong ngày → kill-switch. Altcoin biến động mạnh, 5% quá chặt dễ false-trigger.
   pauseHours: 24                       # Kill-switch pause trong N giờ
   maxConcurrentPositions: 5            # 5 main slots + 2 standby = 7 vị thế tối đa. Tăng 3→5 vừa giảm vốn/lệnh (deployable/5) vừa bắt thêm tín hiệu (giảm [MISS]).
-  maxPnlPctEligibleForRebalance: -100  # TẮT rebalance (đặt ngưỡng âm sâu để không position nào lọt). Paper 9 ngày: rebalance lock loss 6/6 lần = -3.82 USDT (93% realized loss). Tôn trọng SL=-4% thay vì đổi coin lock loss sớm.
+  maxPnlPctEligibleForRebalance: -100  # TẮT rebalance (đặt ngưỡng âm sâu để không position nào lọt). Paper 9 ngày: rebalance lock loss 6/6 lần = -3.82 USDT (93% realized loss). Tôn trọng SL=-3% thay vì đổi coin lock loss sớm.
   rebalanceMinHoldMinutes: 120         # Không rebalance position giữ < 2h (tránh churn mua-bán-mua)
   # --- FUTURES ONLY ---
   liquidationBufferPct: 30             # Lỗ max cho phép = 30% khoảng cách (entry → liqPrice)
@@ -147,7 +147,7 @@ scanner:
     - TUSDUSDT
     - USD1USDT
     - RLUSDUSDT
-    - EURUSDT       # Cặp ngoại hối EUR/USD, biến động <0.5%/ngày — không hợp altcoin strategy TP 5%/SL 4%
+    - EURUSDT       # Cặp ngoại hối EUR/USD, biến động <0.5%/ngày — không hợp altcoin strategy TP 5%/SL 3%
 
 # ========= TIMEFRAMES =========
 timeframes:
