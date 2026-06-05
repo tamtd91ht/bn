@@ -1,16 +1,18 @@
 # ============================================================
 # Binance Auto-Trading Bot — cấu hình chính (app.yml)
 #
-# File này được load theo thứ tự:
-#   1. <thư mục chứa bot.jar>/app.yml   ← ưu tiên (edit để đổi runtime)
-#   2. classpath:/app.yml               ← fallback khi chạy từ IDE / chưa tạo file ngoài
+# ĐÂY LÀ NGUỒN CẤU HÌNH DUY NHẤT (bundled trong bot.jar qua classpath:/app.yml).
+# Đã bỏ bản app.yml cạnh jar — mọi thay đổi config sửa TRỰC TIẾP file này rồi rebuild jar.
+# Loader vẫn ưu tiên <thư mục chứa bot.jar>/app.yml NẾU tồn tại (escape hatch tạm thời),
+# nhưng quy ước hiện tại là không tạo file ngoài đó.
 #
 # Per-symbol override đặt trong `symbols.yml` cạnh jar (xem ví dụ cuối file).
 #
 # Secrets (API keys) KHÔNG bỏ vào đây. Set qua env var:
 #   BINANCE_API_KEY, BINANCE_API_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 #
-# Hot-reload: sửa file → lưu → bot tự nhận sau vài giây (xem dynamic.hotReload).
+# LƯU Ý hot-reload: chỉ hoạt động khi có app.yml ngoài cạnh jar. Vì nay dùng bản bundled,
+# đổi config cần rebuild + redeploy jar (hot-reload không áp dụng cho file trong jar).
 # ============================================================
 
 # ========= EXCHANGE =========
@@ -57,16 +59,17 @@ exit:
   takeProfitPct: 5.0               # TP lần 1 (% so giá entry)
   partialTpRatio: 0.5              # TP lần 1 và trend còn UP → bán 50%, giữ 50% chờ TP kế
   trailingTpStepPct: 3.0           # Mỗi lần partial TP, nâng ngưỡng TP kế +3%
-  stopLossPct: 4.0                 # SL (% so giá entry). Altcoin biến động → nới 4% để tránh wick false.
+  stopLossPct: 3.0                 # SL (% so giá entry). Hạ 4→3: data 06-04/05 avg thua -4.3% > avg thắng +2.1% → thu hẹp độ lớn mỗi lần thua.
   maxDropChecks: 2                 # Cần 2 fast-tick (~60-120s) liên tiếp dưới -SL mới bán (lọc wick đơn). Trend DOWNTREND không hồi vẫn bán ngay (PositionManager.evaluateStopLoss).
   recoveryResetPct: -2.0           # Hồi về > ngưỡng này → reset dropCheckCount (match với SL mới)
   breakevenAfterPartialTp: true    # Sau partial TP dời SL về breakeven
   cooldownAfterLossHours: 24       # Sau stop-loss không mua lại coin đó trong N giờ. Cũ 4h quá ngắn → tái nhập coin vừa thua trong cùng phiên.
+  cooldownAfterWinHours: 6         # Sau TP thắng (full), cooldown N giờ chặn tái nhập cùng phiên. Data: MEME/LA thắng rồi mua lại thua ngay = -4.6 USDT. 0 = tắt.
   # --- TRAILING TP (high-water mark) ---
   # Bảo vệ lãi đã đạt khi pnl tụt khỏi đỉnh - tránh case "lên 4% rồi rơi về 0".
   # Logic: pnl từng đạt ≥ trailingArmPct (armed) AND drop từ đỉnh ≥ trailingDropPct → bán ngay.
-  trailingArmPct: 3.0              # Lãi từ 3% trở lên mới enable trailing (cũ 2.0 — paper test: cả 3 winner exit < 2% vì arm quá thấp)
-  trailingDropPct: 1.5             # Tụt ≥ 1.5% khỏi đỉnh → SELL toàn bộ (cũ 1.0 — quá chặt, bị wick đẩy ra)
+  trailingArmPct: 3.5              # Lãi từ 3.5% mới enable trailing (cũ 3.0 — để winner chạy thêm trước khi protect)
+  trailingDropPct: 1.2             # Tụt ≥ 1.2% khỏi đỉnh → SELL toàn bộ (cũ 1.5 — siết để realize gần đỉnh hơn, bù SL hẹp lại)
                                    # Cả 2 = 0 hoặc null → tắt trailing.
 
 # ========= CAPITAL =========
@@ -89,7 +92,7 @@ capital:
   # 0.0 = tắt tính năng standby. Khuyến nghị 0.15–0.20.
   standbyReservePct: 0.20
   # Score tối thiểu của scanner signal để trigger entry từ standby fund.
-  standbyMinScore: 11.0                 # Cũ 15.5 — hạ để standby ăn được BOTTOM_REVERSAL (score thực tế 10.7–12.6) khi main slot đầy.
+  standbyMinScore: 14.0                 # Nâng lại 11→14: BOTTOM_REVERSAL đã được lọc trend 4h ở nguồn (SignalDetector), không cần gate thấp; standby chỉ lấy UPTREND/STRONG_WAVE đủ mạnh.
   # Tối đa N vị thế standby cùng lúc.
   standbyMaxPositions: 2
   # Sau N giờ, nếu PnL >= standbyMinRecoveryPnlPct → đóng sớm để thu hồi vốn.

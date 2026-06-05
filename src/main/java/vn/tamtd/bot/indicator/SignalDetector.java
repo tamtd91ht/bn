@@ -18,9 +18,11 @@ import vn.tamtd.bot.config.ConfigRegistry;
 public final class SignalDetector {
 
     private final ConfigRegistry configRegistry;
+    private final TrendIndicators trendIndicators;
 
     public SignalDetector(ConfigRegistry configRegistry) {
         this.configRegistry = configRegistry;
+        this.trendIndicators = new TrendIndicators(configRegistry);
     }
 
     public boolean isUptrendEmerging(BarSeries s) {
@@ -50,10 +52,17 @@ public final class SignalDetector {
         return crossedUp && slopeUp && volSpike;
     }
 
-    public boolean isBottomReversal(BarSeries s) {
+    public boolean isBottomReversal(BarSeries s, BarSeries s4h) {
         AppConfig.Signals sig = configRegistry.current().signals();
         int period = sig.rsiPeriod();
         if (s.getBarCount() < period + 10) return false;
+
+        // Lọc trend khung lớn: không bắt đáy khi 4h vẫn DOWNTREND (tránh bắt dao rơi).
+        // Data 06-04/05: 6/6 lệnh BOTTOM_REVERSAL hit SL, tất cả thoát qua SL_TREND_BAD
+        // "trend=DOWNTREND không hồi" → entry vào downtrend khung lớn.
+        if (s4h != null && trendIndicators.classify(s4h) == TrendIndicators.Trend.DOWNTREND) {
+            return false;
+        }
 
         int last = s.getEndIndex();
         ClosePriceIndicator close = new ClosePriceIndicator(s);

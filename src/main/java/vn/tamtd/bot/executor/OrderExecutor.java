@@ -372,6 +372,14 @@ public final class OrderExecutor {
                 state.cooldowns.put(symbol, until);
                 log.info("[SELL:COOLDOWN] {} đặt cooldown {}h đến {}",
                         symbol, config.exitFor(symbol).cooldownAfterLossHoursV(), until);
+            } else if ("TP_FULL".equals(type)) {
+                int winHrs = config.exitFor(symbol).cooldownAfterWinHoursV();
+                if (winHrs > 0) {
+                    Instant until = Instant.now().plusSeconds((long) winHrs * 3600);
+                    state.cooldowns.put(symbol, until);
+                    log.info("[SELL:COOLDOWN-WIN] {} cooldown {}h sau TP đến {}",
+                            symbol, winHrs, until);
+                }
             }
         } else {
             position.qty = remaining;

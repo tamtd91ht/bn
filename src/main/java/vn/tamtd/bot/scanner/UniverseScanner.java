@@ -111,7 +111,7 @@ public final class UniverseScanner {
                 ScanResult.Signal signal = ScanResult.Signal.NONE;
                 if (signalDetector.isStrongWave(s4h, s1h)) signal = ScanResult.Signal.STRONG_WAVE;
                 else if (signalDetector.isUptrendEmerging(s1h)) signal = ScanResult.Signal.UPTREND_EMERGING;
-                else if (signalDetector.isBottomReversal(s1h)) signal = ScanResult.Signal.BOTTOM_REVERSAL;
+                else if (signalDetector.isBottomReversal(s1h, s4h)) signal = ScanResult.Signal.BOTTOM_REVERSAL;
 
                 double score = signalScore(signal, c.qv);
                 results.add(new ScanResult(c.symbol, c.qv, c.pct, signal, score));

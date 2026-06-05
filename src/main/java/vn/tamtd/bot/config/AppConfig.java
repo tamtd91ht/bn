@@ -77,6 +77,7 @@ public record AppConfig(
                 e.recoveryResetPct() != null ? e.recoveryResetPct() : exit.recoveryResetPct(),
                 e.breakevenAfterPartialTp() != null ? e.breakevenAfterPartialTp() : exit.breakevenAfterPartialTp(),
                 e.cooldownAfterLossHours() != null ? e.cooldownAfterLossHours() : exit.cooldownAfterLossHours(),
+                e.cooldownAfterWinHours() != null ? e.cooldownAfterWinHours() : exit.cooldownAfterWinHours(),
                 e.trailingArmPct() != null ? e.trailingArmPct() : exit.trailingArmPct(),
                 e.trailingDropPct() != null ? e.trailingDropPct() : exit.trailingDropPct()
         );
@@ -196,6 +197,9 @@ public record AppConfig(
             Double recoveryResetPct,
             Boolean breakevenAfterPartialTp,
             Integer cooldownAfterLossHours,
+            /** Cooldown (giờ) sau khi đóng full bằng TP thắng - chặn tái nhập cùng phiên (churn).
+             *  Ngắn hơn cooldownAfterLossHours; null/0 = tắt (cho mua lại ngay). */
+            Integer cooldownAfterWinHours,
             /** Trailing high-water TP: khi pnl% từng đạt ≥ trailingArmPct, enable trailing.
              *  Nếu drop từ đỉnh ≥ trailingDropPct → bán toàn bộ ngay (TP_FULL).
              *  Mục đích: bảo vệ lãi đã đạt được khi chưa hit takeProfitPct.
@@ -212,6 +216,7 @@ public record AppConfig(
         public double recoveryResetPctV()    { return recoveryResetPct; }
         public boolean breakevenAfterPartialTpV() { return breakevenAfterPartialTp; }
         public int    cooldownAfterLossHoursV() { return cooldownAfterLossHours; }
+        public int    cooldownAfterWinHoursV()  { return cooldownAfterWinHours == null ? 0 : cooldownAfterWinHours; }
         public double trailingArmPctV()      { return trailingArmPct == null ? 0.0 : trailingArmPct; }
         public double trailingDropPctV()     { return trailingDropPct == null ? 0.0 : trailingDropPct; }
         public boolean trailingEnabled()     { return trailingArmPctV() > 0 && trailingDropPctV() > 0; }
