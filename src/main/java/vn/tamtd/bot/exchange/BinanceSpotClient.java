@@ -9,7 +9,9 @@ import org.slf4j.LoggerFactory;
 import vn.tamtd.bot.config.AppConfig;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Binance Spot — dùng SDK binance-connector-java.
@@ -91,6 +93,43 @@ public final class BinanceSpotClient implements ExchangeClient {
             return new BigDecimal(root.get("price").asText());
         } catch (Exception e) {
             throw new RuntimeException("Parse latestPrice lỗi cho " + symbol, e);
+        }
+    }
+
+    /**
+     * Batch giá nhiều symbol trong 1 request: {@code GET /api/v3/ticker/price?symbols=["A","B"]}.
+     * Weight=4 (cố định cho list/all), rẻ hơn 2×N khi N≥3. Response là JSON array.
+     */
+    @Override
+    public Map<String, BigDecimal> latestPrices(Collection<String> symbols) {
+        if (symbols == null || symbols.isEmpty()) return Map.of();
+        // 1 symbol: dùng endpoint đơn (weight 2 < 4) và trả về object thay vì array.
+        if (symbols.size() == 1) {
+            String only = symbols.iterator().next();
+            Map<String, BigDecimal> single = new LinkedHashMap<>();
+            single.put(only, latestPrice(only));
+            return single;
+        }
+        StringBuilder arr = new StringBuilder("[");
+        boolean first = true;
+        for (String s : symbols) {
+            if (!first) arr.append(',');
+            arr.append('"').append(s).append('"');
+            first = false;
+        }
+        arr.append(']');
+        LinkedHashMap<String, Object> params = new LinkedHashMap<>();
+        params.put("symbols", arr.toString());
+        String json = executeWeighted(4, () -> spotClient.createMarket().tickerSymbol(params));
+        try {
+            JsonNode root = mapper.readTree(json);
+            Map<String, BigDecimal> out = new LinkedHashMap<>();
+            for (JsonNode node : root) {
+                out.put(node.get("symbol").asText(), new BigDecimal(node.get("price").asText()));
+            }
+            return out;
+        } catch (Exception e) {
+            throw new RuntimeException("Parse latestPrices (batch) lỗi cho " + symbols, e);
         }
     }
 

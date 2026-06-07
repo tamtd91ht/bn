@@ -330,14 +330,21 @@ public final class StrategyCoordinator {
     }
 
     private Map<String, BigDecimal> fetchPrices(BotState state, AppConfig config, boolean entriesNeeded) {
-        Map<String, BigDecimal> map = new HashMap<>();
         Set<String> wanted = new HashSet<>();
         wanted.addAll(state.positions.keySet());
         if (entriesNeeded) wanted.addAll(config.watchlist().symbols());
-        for (String symbol : wanted) {
-            try { map.put(symbol, client.latestPrice(symbol)); }
-            catch (Exception e) { log.warn("Fetch price {} lỗi: {}", symbol, e.getMessage()); }
+        if (wanted.isEmpty()) return new HashMap<>();
+        try {
+            // 1 request batch thay vì N request (FastTick poll mỗi 60s).
+            return client.latestPrices(wanted);
+        } catch (Exception e) {
+            log.warn("Batch fetch {} price lỗi: {} - fallback từng symbol", wanted.size(), e.getMessage());
+            Map<String, BigDecimal> map = new HashMap<>();
+            for (String symbol : wanted) {
+                try { map.put(symbol, client.latestPrice(symbol)); }
+                catch (Exception ex) { log.warn("Fetch price {} lỗi: {}", symbol, ex.getMessage()); }
+            }
+            return map;
         }
-        return map;
     }
 }

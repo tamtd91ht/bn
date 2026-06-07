@@ -1,6 +1,9 @@
 package vn.tamtd.bot.exchange;
 
 import java.math.BigDecimal;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Giao diện chung cho Spot và USDⓈ-M Futures.
@@ -32,6 +35,21 @@ public interface ExchangeClient {
 
     /** Giá hiện tại (gần nhất). */
     BigDecimal latestPrice(String symbol);
+
+    /**
+     * Giá hiện tại cho nhiều symbol trong 1 request (batch) - tiết kiệm số request & weight
+     * so với gọi {@link #latestPrice} từng symbol.
+     *
+     * <p>Default: fallback gọi {@link #latestPrice} từng symbol (cho client chưa hỗ trợ batch).
+     * {@link BinanceSpotClient} override bằng endpoint {@code /api/v3/ticker/price?symbols=[...]}.
+     */
+    default Map<String, BigDecimal> latestPrices(Collection<String> symbols) {
+        Map<String, BigDecimal> out = new LinkedHashMap<>();
+        for (String s : symbols) {
+            out.put(s, latestPrice(s));
+        }
+        return out;
+    }
 
     // ==== Account (signed) ====
 
